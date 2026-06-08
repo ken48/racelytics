@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Racelytics</title>
+    <link rel="icon" href="racelytics-icon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="styles.css?v=25">
+    <script src="https://cdn.plot.ly/plotly-2.35.2.min.js" defer></script>
+    <script src="app.js?v=25" defer></script>
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="topbar" aria-label="Загрузка данных гонки">
+        <div class="brand">
+          <img class="mark" src="racelytics-icon.svg" alt="" aria-hidden="true">
+          <div>
+            <h1>Racelytics</h1>
+          </div>
+        </div>
+
+        <form id="urlForm" class="source-form">
+          <label for="srcInput">CSV URL</label>
+          <div class="input-row">
+            <input id="srcInput" name="src" type="url" placeholder="https://example.com/results.csv">
+            <button type="submit">Загрузить</button>
+          </div>
+        </form>
+
+        <label id="dropZone" class="drop-zone" for="fileInput">
+          <input id="fileInput" type="file" accept=".csv,text/csv">
+          <span>Перетащите CSV</span>
+          <strong>или выберите файл</strong>
+        </label>
+      </section>
+
+      <section id="raceMeta" class="race-meta">Загрузите CSV по ссылке или файлом</section>
+      <section id="notice" class="notice is-hidden" role="status"></section>
+
+      <section class="toolbar" aria-label="Инструменты участников">
+        <div class="search-box">
+          <label for="searchInput">Поиск</label>
+          <input id="searchInput" type="search" placeholder="Номер или имя">
+        </div>
+        <div class="event-box">
+          <label for="eventSelect">Соревнование</label>
+          <select id="eventSelect"></select>
+        </div>
+        <div class="course-box">
+          <label for="courseSelect">Трасса</label>
+          <select id="courseSelect"></select>
+        </div>
+        <div class="group-box">
+          <label for="groupSelect">Зачет</label>
+          <select id="groupSelect"></select>
+        </div>
+        <div class="metric-strip" aria-label="Сводка гонки">
+          <div>
+            <span>Участники</span>
+            <strong id="starterCount">0</strong>
+          </div>
+          <div>
+            <span>Круги</span>
+            <strong id="lapCount">0</strong>
+          </div>
+        </div>
+      </section>
+
+      <section class="layout">
+        <aside class="side-panel" aria-label="Выбранный участник">
+          <article id="participantCard" class="participant-card">
+            <span class="muted">Выберите участника</span>
+          </article>
+        </aside>
+
+        <section class="workspace">
+          <div class="tabs" role="tablist" aria-label="Графики">
+            <button class="tab is-active" type="button" data-chart="cumulativeChart">Суммарное время</button>
+            <button class="tab" type="button" data-chart="lapChart">Круги</button>
+            <button class="tab" type="button" data-chart="gapChart">Отставание</button>
+            <button class="tab" type="button" data-chart="positionChart">Позиция</button>
+          </div>
+          <div id="chartScope" class="chart-scope"></div>
+
+          <section class="charts" aria-label="Графики гонки">
+            <div id="cumulativeChart" class="chart is-active"></div>
+            <div id="lapChart" class="chart"></div>
+            <div id="gapChart" class="chart"></div>
+            <div id="positionChart" class="chart"></div>
+          </section>
+
+          <section class="table-wrap" aria-label="Таблица результатов">
+            <table>
+              <thead>
+                <tr id="tableHead"></tr>
+              </thead>
+              <tbody id="tableBody"></tbody>
+            </table>
+          </section>
+        </section>
+      </section>
+    </main>
+  </body>
+</html>
