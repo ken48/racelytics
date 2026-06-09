@@ -26,13 +26,14 @@ const els = {
   lapCount: document.querySelector("#lapCount"),
   participantCard: document.querySelector("#participantCard"),
   chartScope: document.querySelector("#chartScope"),
+  comparisonPanel: document.querySelector("#comparisonPanel"),
   tableHead: document.querySelector("#tableHead"),
   tableBody: document.querySelector("#tableBody"),
   tabs: document.querySelectorAll(".tab"),
   charts: document.querySelectorAll(".chart")
 };
 
-const chartIds = ["cumulativeChart", "lapChart", "gapChart", "positionChart"];
+const chartIds = ["cumulativeChart", "lapChart", "positionChart"];
 const palette = ["#0f766e", "#b3261e", "#d69e2e", "#293241", "#627c85", "#6a4c93", "#2a9d8f", "#e76f51"];
 const CHART_DEFAULT_LIMIT = 10;
 
@@ -95,7 +96,10 @@ function bindEvents() {
   });
 
   els.tabs.forEach((tab) => {
-    tab.addEventListener("click", () => setActiveChart(tab.dataset.chart));
+    tab.addEventListener("click", () => {
+      if (tab.getAttribute("aria-disabled") === "true") return;
+      setActiveChart(tab.dataset.chart);
+    });
   });
 
   window.addEventListener("resize", debounce(() => {
@@ -263,12 +267,9 @@ function normalizeRows(rows) {
   const leadersByLap = computeLeadersByGroup(officialParticipants, lapHeaders.length);
   participants.forEach((participant) => {
     participant.positions = positionsByLap.get(participant.id) ?? Array(lapHeaders.length).fill(null);
-    participant.gaps = participant.cumulative.map((time, lapIndex) => {
-      if (!isOfficialFinisher(participant)) return null;
-      const leaderTime = leadersByLap.get(participant.scoreKey)?.[lapIndex];
-      return time == null || leaderTime == null ? null : time - leaderTime;
-    });
-    participant.finishGap = lastNumber(participant.gaps);
+    participant.finishGap = isOfficialFinisher(participant)
+      ? getFinishGap(participant, leadersByLap)
+      : null;
   });
 
   return { participants, laps: lapHeaders.map(lapLabel) };
@@ -353,11 +354,11 @@ function normalizeGender(value) {
   const normalized = raw.toLowerCase();
 
   if (["f", "female", "w", "woman", "women", "ж", "жен", "женщина", "женщины"].includes(normalized)) {
-    return { key: "F", label: "Женщины" };
+    return { key: "F", label: "Ж" };
   }
 
   if (["m", "male", "man", "men", "м", "муж", "мужчина", "мужчины"].includes(normalized)) {
-    return { key: "M", label: "Мужчины" };
+    return { key: "M", label: "М" };
   }
 
   return { key: normalized || "unknown", label: raw || "Не указан" };
@@ -438,13 +439,19 @@ function isOfficialFinisher(participant) {
   return !participant.placeStatus;
 }
 
-function computeLeaders(participants, lapCount) {
-  return Array.from({ length: lapCount }, (_, lapIndex) => {
-    const times = participants
-      .map((participant) => participant.cumulative[lapIndex])
-      .filter((time) => Number.isFinite(time));
-    return times.length ? Math.min(...times) : null;
-  });
+function getFinishGap(participant, leadersByLap) {
+  const lapIndex = lastFiniteIndex(participant.cumulative);
+  if (lapIndex < 0) return null;
+  const leaderTime = leadersByLap.get(participant.scoreKey)?.[lapIndex];
+  const time = participant.cumulative[lapIndex];
+  return Number.isFinite(time) && Number.isFinite(leaderTime) ? time - leaderTime : null;
+}
+
+function lastFiniteIndex(values) {
+  for (let index = values.length - 1; index >= 0; index -= 1) {
+    if (Number.isFinite(values[index])) return index;
+  }
+  return -1;
 }
 
 function computePositions(participants, lapCount) {
@@ -475,6 +482,15 @@ function computePositionsByGroup(participants, lapCount) {
   return positions;
 }
 
+function computeLeaders(participants, lapCount) {
+  return Array.from({ length: lapCount }, (_, lapIndex) => {
+    const times = participants
+      .map((participant) => participant.cumulative[lapIndex])
+      .filter((time) => Number.isFinite(time));
+    return times.length ? Math.min(...times) : null;
+  });
+}
+
 function computeLeadersByGroup(participants, lapCount) {
   const leaders = new Map();
   groupParticipants(participants).forEach((groupParticipantsList, groupKey) => {
@@ -500,6 +516,7 @@ function renderAll() {
   renderCard();
   renderTable();
   renderCharts();
+  renderComparisonPanel();
   setActiveChart(state.activeChart);
 }
 
@@ -705,19 +722,12 @@ function renderCharts() {
   }, config);
 
   if (officialGroupSelected) {
-    clearChartPlaceholder("gapChart");
-    Plotly.react("gapChart", traces(participants, x, "gaps", "time"), {
-      ...commonLayout,
-      yaxis: { ...commonLayout.yaxis, title: "Отставание от лидера зачета", ...timeTickConfig(participants.flatMap((participant) => participant.gaps)) }
-    }, config);
-
     clearChartPlaceholder("positionChart");
     Plotly.react("positionChart", traces(participants, x, "positions", "position"), {
       ...commonLayout,
       yaxis: { ...commonLayout.yaxis, title: "Позиция в зачете", autorange: "reversed", dtick: 1 }
     }, config);
   } else {
-    renderEmptyChart("gapChart", "Выберите зачет, чтобы увидеть отставания");
     renderEmptyChart("positionChart", "Выберите зачет, чтобы увидеть позиции");
   }
 }
@@ -738,7 +748,7 @@ function clearChartPlaceholder(id) {
 }
 
 function renderChartScope(participants) {
-  const favoriteCount = getVisibleParticipants().filter((participant) => state.favorites.has(participant.id)).length;
+  const favoriteCount = getFilteredParticipants().filter((participant) => state.favorites.has(participant.id)).length;
 
   if (!state.participants.length) {
     els.chartScope.textContent = "Графики появятся после загрузки CSV.";
@@ -751,20 +761,134 @@ function renderChartScope(participants) {
   }
 
   if (state.favorites.size) {
-    els.chartScope.textContent = favoriteCount
-      ? `На графиках: избранные участники (${participants.length}). Звездочка в таблице добавляет или убирает линию.`
-      : "На графиках нет линий: избранные участники не попали в текущий фильтр.";
+    els.chartScope.innerHTML = favoriteCount
+      ? `<strong>Сравнение</strong><span>На графиках только отмеченные участники (${participants.length}). Звездочка в таблице добавляет или убирает линию.</span>`
+      : `<strong>Сравнение</strong><span>На графиках нет линий: отмеченные участники не попали в текущий фильтр.</span>`;
     return;
   }
 
-  els.chartScope.textContent = `На графиках: топ-${Math.min(CHART_DEFAULT_LIMIT, participants.length)} по текущей сортировке таблицы. Отметьте участников звездой, чтобы сравнить только их.`;
+  els.chartScope.innerHTML = `<strong>Обзор</strong><span>На графиках топ-${Math.min(CHART_DEFAULT_LIMIT, participants.length)} по месту в текущей выборке. Отметьте участников звездой, чтобы перейти к сравнению.</span>`;
+}
+
+function renderComparisonPanel() {
+  const selected = getChartParticipants();
+
+  if (!state.participants.length || !state.favorites.size || selected.length < 2) {
+    hideComparisonPanel();
+    return;
+  }
+
+  els.comparisonPanel.classList.remove("is-hidden");
+
+  if (!isCourseComparable()) {
+    els.comparisonPanel.innerHTML = `
+      <header class="comparison-header">
+        <div>
+          <h2>Сравнение выбранных</h2>
+          <p>Выберите одну трассу, чтобы сравнить отмеченных участников по времени.</p>
+        </div>
+      </header>
+    `;
+    return;
+  }
+
+  const participants = withGroupMetrics(selected);
+  const table = comparisonTableForActiveChart(participants);
+  const showContext = hasMixedComparisonContext(participants);
+  const headers = state.laps.map((lap) => `<th>${escapeHtml(lap)}</th>`).join("");
+  const rows = participants.map((participant) => comparisonRow(participant, table)).join("");
+
+  els.comparisonPanel.innerHTML = `
+    <header class="comparison-header">
+      <div>
+        <h2>${escapeHtml(table.title)}</h2>
+        <p>${escapeHtml(table.note)}${showContext ? " Сравнение по трассе, без учета зачета." : ""}</p>
+      </div>
+    </header>
+    <div class="comparison-table-wrap">
+      <table class="comparison-table">
+        <thead>
+          <tr>
+            <th>Участник</th>
+            ${headers}
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+function hideComparisonPanel() {
+  els.comparisonPanel.classList.add("is-hidden");
+  els.comparisonPanel.innerHTML = "";
+}
+
+function hasMixedComparisonContext(participants) {
+  return new Set(participants.map((participant) => participant.eventKey)).size > 1
+    || new Set(participants.map((participant) => participant.groupKey)).size > 1;
+}
+
+function participantLabel(participant) {
+  return `#${participant.bib} ${participant.name}`;
+}
+
+function comparisonTableForActiveChart(participants) {
+  if (state.activeChart === "lapChart") {
+    const leaders = state.laps.map((_, index) => minNumber(participants.map((participant) => participant.laps[index])));
+    return {
+      title: "Таблица: круги",
+      note: "Разница к лучшему кругу среди выбранных на каждом круге.",
+      values: (participant) => participant.laps.map((time, index) => compareTime(time, leaders[index])),
+      format: formatComparisonDelta,
+      className: comparisonClass
+    };
+  }
+
+  if (state.activeChart === "positionChart") {
+    return {
+      title: "Таблица: позиция",
+      note: "Те же позиции по отметкам, что на графике.",
+      values: (participant) => participant.positions,
+      format: formatPosition,
+      className: () => "is-even"
+    };
+  }
+
+  const leaders = state.laps.map((_, index) => minNumber(participants.map((participant) => participant.cumulative[index])));
+  return {
+    title: "Таблица: суммарное время",
+    note: "Нарастание разницы к лучшему из выбранных на каждой отметке.",
+    values: (participant) => participant.cumulative.map((time, index) => compareTime(time, leaders[index])),
+    format: formatComparisonDelta,
+    className: comparisonClass
+  };
+}
+
+function comparisonRow(participant, table) {
+  const cells = table.values(participant).map((value) => (
+    `<td class="${table.className(value)}">${escapeHtml(table.format(value))}</td>`
+  )).join("");
+
+  return `
+    <tr>
+      <th scope="row">
+        <span>${escapeHtml(participantLabel(participant))}</span>
+      </th>
+      ${cells}
+    </tr>
+  `;
+}
+
+function compareTime(value, baseValue) {
+  return Number.isFinite(value) && Number.isFinite(baseValue) ? value - baseValue : null;
 }
 
 function getChartParticipants() {
-  const visible = getVisibleParticipants();
-  const favoriteParticipants = visible.filter((participant) => state.favorites.has(participant.id));
+  const filtered = getFilteredParticipants();
+  const favoriteParticipants = filtered.filter((participant) => state.favorites.has(participant.id));
   if (state.favorites.size) return favoriteParticipants;
-  return visible.slice(0, CHART_DEFAULT_LIMIT);
+  return getOverviewParticipants(filtered);
 }
 
 function toggleFavorite(id) {
@@ -780,16 +904,10 @@ function withGroupMetrics(participants) {
   const scope = (state.group === "all" ? getCourseParticipants() : getScopeParticipants())
     .filter(isOfficialFinisher);
   const positionsByLap = computePositionsByGroup(scope, state.laps.length);
-  const leadersByLap = computeLeadersByGroup(scope, state.laps.length);
 
   return participants.map((participant) => ({
     ...participant,
-    positions: positionsByLap.get(participant.id) ?? participant.positions,
-    gaps: participant.cumulative.map((time, lapIndex) => {
-      if (!isOfficialFinisher(participant)) return null;
-      const leaderTime = leadersByLap.get(participant.scoreKey)?.[lapIndex];
-      return time == null || leaderTime == null ? null : time - leaderTime;
-    })
+    positions: positionsByLap.get(participant.id) ?? participant.positions
   }));
 }
 
@@ -843,14 +961,14 @@ function niceTimeStep(target) {
     .find((step) => step >= target) ?? 7200;
 }
 
-const OFFICIAL_CHART_IDS = ["gapChart", "positionChart"];
+const OFFICIAL_CHART_IDS = ["positionChart"];
 
 function updateChartTabs(officialGroupSelected) {
   els.tabs.forEach((tab) => {
     const locked = OFFICIAL_CHART_IDS.includes(tab.dataset.chart) && !officialGroupSelected;
-    tab.disabled = locked;
     tab.classList.toggle("is-disabled", locked);
-    tab.title = locked ? "Доступно после выбора зачета" : "";
+    tab.setAttribute("aria-disabled", String(locked));
+    tab.title = locked ? "Позиция доступна, когда выбран один зачет. В режиме всех зачетов позиции нельзя смешивать." : "";
   });
 
   if (!officialGroupSelected && OFFICIAL_CHART_IDS.includes(state.activeChart)) {
@@ -866,6 +984,7 @@ function setActiveChart(id) {
     tab.setAttribute("aria-selected", String(active));
   });
   els.charts.forEach((chart) => chart.classList.toggle("is-active", chart.id === id));
+  renderComparisonPanel();
   if (window.Plotly) requestAnimationFrame(resizeActiveChart);
 }
 
@@ -886,16 +1005,36 @@ function toggleSort(key) {
 }
 
 function getVisibleParticipants() {
-  const query = state.search;
-  return getScopeParticipants()
-    .filter((participant) => {
-      if (!query) return true;
-      return participant.bib.toLowerCase().includes(query) || participant.name.toLowerCase().includes(query);
-    })
+  return getFilteredParticipants()
     .sort((a, b) => {
       const dir = state.sort.dir === "asc" ? 1 : -1;
       return compareSortValue(a, b, state.sort.key) * dir;
     });
+}
+
+function getFilteredParticipants() {
+  const query = state.search;
+  return getScopeParticipants().filter((participant) => {
+    if (!query) return true;
+    return participant.bib.toLowerCase().includes(query) || participant.name.toLowerCase().includes(query);
+  });
+}
+
+function getOverviewParticipants(participants) {
+  return [...participants]
+    .sort(compareOverviewParticipants)
+    .slice(0, CHART_DEFAULT_LIMIT);
+}
+
+function compareOverviewParticipants(a, b) {
+  const official = compareValues(isOfficialFinisher(a) ? 0 : 1, isOfficialFinisher(b) ? 0 : 1);
+  return official
+    || compareValues(a.place, b.place)
+    || compareValues(b.completedLaps, a.completedLaps)
+    || compareValues(a.total, b.total)
+    || compareValues(a.eventLabel, b.eventLabel)
+    || compareValues(a.groupLabel, b.groupLabel)
+    || compareValues(a.name, b.name);
 }
 
 function getEventParticipants() {
@@ -1108,6 +1247,10 @@ function formatTime(value) {
   return `${sign}${minutes}:${padded}`;
 }
 
+function formatPosition(value) {
+  return Number.isFinite(value) ? String(value) : "-";
+}
+
 function formatGap(value) {
   if (!Number.isFinite(value)) return "-";
   if (Math.abs(value) < 0.5) return "0:00";
@@ -1122,6 +1265,17 @@ function formatTableFinish(participant) {
   return isOfficialFinisher(participant)
     ? formatTime(participant.total)
     : escapeHtml(participant.placeLabel);
+}
+
+function formatComparisonDelta(value) {
+  if (!Number.isFinite(value)) return "-";
+  if (Math.abs(value) < 0.5) return "0:00";
+  return value > 0 ? `+${formatTime(value)}` : formatTime(value);
+}
+
+function comparisonClass(value) {
+  if (!Number.isFinite(value) || Math.abs(value) < 0.5) return "is-even";
+  return value > 0 ? "is-behind" : "is-ahead";
 }
 
 function setNotice(message, variant = "error") {

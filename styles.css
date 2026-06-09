@@ -471,12 +471,16 @@ body.is-busy .file-picker {
   color: #fff;
 }
 
-.tab:disabled {
+.tab:disabled,
+.tab.is-disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }
 
 .chart-scope {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   min-height: 36px;
   margin: 8px 12px 0;
   border: 1px solid var(--line);
@@ -485,6 +489,91 @@ body.is-busy .file-picker {
   color: #435047;
   padding: 8px 10px;
   font-size: 0.9rem;
+}
+
+.chart-scope strong {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  border-radius: 999px;
+  background: #e5f3ef;
+  color: #0f5a53;
+  padding: 0 8px;
+  font-size: 0.76rem;
+  text-transform: uppercase;
+}
+
+.chart-scope span {
+  min-width: 0;
+}
+
+.comparison-panel {
+  margin: 8px 12px 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.comparison-header {
+  padding: 12px;
+}
+
+.comparison-header h2 {
+  font-size: 1rem;
+  line-height: 1.25;
+}
+
+.comparison-header p {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.35;
+}
+
+.comparison-table-wrap {
+  overflow-x: auto;
+  border-top: 1px solid var(--line);
+}
+
+.comparison-table {
+  min-width: 720px;
+  font-size: 0.88rem;
+}
+
+.comparison-table th:first-child,
+.comparison-table td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+}
+
+.comparison-table tbody th {
+  background: #fff;
+  color: var(--ink);
+  font-weight: 900;
+}
+
+.comparison-table tbody th span {
+  display: block;
+}
+
+.comparison-table td {
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+}
+
+.comparison-table td.is-ahead {
+  color: #0f766e;
+}
+
+.comparison-table td.is-behind {
+  color: #b3261e;
+}
+
+.comparison-table td.is-even,
+.comparison-table td.is-status {
+  color: #435047;
 }
 
 .charts {
@@ -605,6 +694,7 @@ tbody tr.is-favorite {
   .metric-strip {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
 }
 
 @media (max-width: 620px) {
@@ -618,6 +708,11 @@ tbody tr.is-favorite {
 
   .metric-strip {
     grid-template-columns: 1fr;
+  }
+
+  .chart-scope {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .charts {
