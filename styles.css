@@ -160,10 +160,14 @@ select {
 }
 
 .file-picker strong {
+  max-width: 100%;
   margin-top: 2px;
+  overflow: hidden;
   color: var(--track);
   font-size: 0.9rem;
+  text-overflow: ellipsis;
   text-transform: none;
+  white-space: nowrap;
 }
 
 .file-picker:focus-within {
@@ -180,8 +184,78 @@ select {
   padding: 10px 12px;
 }
 
+.notice-title {
+  margin: 0;
+  font-weight: 800;
+}
+
+.notice-list {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.notice-list li {
+  margin: 3px 0;
+}
+
+.notice-more {
+  margin: 8px 0 0;
+  color: #8a3a32;
+  font-weight: 700;
+}
+
+.notice.is-loading {
+  border-color: rgba(15, 118, 110, 0.3);
+  background: #f0f7f5;
+  color: #0f5a53;
+}
+
+.notice.is-loading::before {
+  content: "";
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  margin-right: 9px;
+  vertical-align: -2px;
+  border: 2px solid rgba(15, 118, 110, 0.3);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .is-hidden {
   display: none;
+}
+
+.toolbar,
+.layout {
+  transition: opacity 140ms ease 200ms;
+}
+
+body.is-busy .toolbar,
+body.is-busy .layout {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+/* Plotly выставляет pointer-events: all на своих слоях, перебиваем принудительно */
+body.is-busy .charts,
+body.is-busy .charts * {
+  pointer-events: none !important;
+}
+
+body.is-busy .source-form button,
+body.is-busy .file-picker {
+  opacity: 0.6;
+  cursor: progress;
 }
 
 .toolbar {
@@ -395,6 +469,11 @@ select {
 .tab.is-active {
   background: var(--accent);
   color: #fff;
+}
+
+.tab:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .chart-scope {

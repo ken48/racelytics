@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Racelytics</title>
     <link rel="icon" href="racelytics-icon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="styles.css?v=32">
+    <link rel="stylesheet" href="styles.css?v=39">
     <script src="https://cdn.plot.ly/plotly-2.35.2.min.js" defer></script>
-    <script src="app.js?v=32" defer></script>
+    <script src="app.js?v=39" defer></script>
   </head>
   <body>
     <main class="app-shell">
@@ -74,18 +74,18 @@
 
         <section class="workspace">
           <div class="tabs" role="tablist" aria-label="Графики">
-            <button class="tab is-active" type="button" data-chart="cumulativeChart">Суммарное время</button>
-            <button class="tab" type="button" data-chart="lapChart">Круги</button>
-            <button class="tab" type="button" data-chart="gapChart">Отставание</button>
-            <button class="tab" type="button" data-chart="positionChart">Позиция</button>
+            <button class="tab is-active" type="button" role="tab" aria-selected="true" aria-controls="cumulativeChart" data-chart="cumulativeChart">Суммарное время</button>
+            <button class="tab" type="button" role="tab" aria-selected="false" aria-controls="lapChart" data-chart="lapChart">Круги</button>
+            <button class="tab" type="button" role="tab" aria-selected="false" aria-controls="gapChart" data-chart="gapChart">Отставание</button>
+            <button class="tab" type="button" role="tab" aria-selected="false" aria-controls="positionChart" data-chart="positionChart">Позиция</button>
           </div>
           <div id="chartScope" class="chart-scope"></div>
 
           <section class="charts" aria-label="Графики гонки">
-            <div id="cumulativeChart" class="chart is-active"></div>
-            <div id="lapChart" class="chart"></div>
-            <div id="gapChart" class="chart"></div>
-            <div id="positionChart" class="chart"></div>
+            <div id="cumulativeChart" class="chart is-active" role="tabpanel"></div>
+            <div id="lapChart" class="chart" role="tabpanel"></div>
+            <div id="gapChart" class="chart" role="tabpanel"></div>
+            <div id="positionChart" class="chart" role="tabpanel"></div>
           </section>
 
           <section class="table-wrap" aria-label="Таблица результатов">

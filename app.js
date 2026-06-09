@@ -16,6 +16,8 @@ const els = {
   srcInput: document.querySelector("#srcInput"),
   urlForm: document.querySelector("#urlForm"),
   fileInput: document.querySelector("#fileInput"),
+  fileName: document.querySelector(".file-picker strong"),
+  srcButton: document.querySelector("#urlForm button[type='submit']"),
   searchInput: document.querySelector("#searchInput"),
   eventSelect: document.querySelector("#eventSelect"),
   courseSelect: document.querySelector("#courseSelect"),
@@ -34,17 +36,19 @@ const chartIds = ["cumulativeChart", "lapChart", "gapChart", "positionChart"];
 const palette = ["#0f766e", "#b3261e", "#d69e2e", "#293241", "#627c85", "#6a4c93", "#2a9d8f", "#e76f51"];
 const CHART_DEFAULT_LIMIT = 10;
 
+let activeLoadSeq = 0;
+
 document.addEventListener("DOMContentLoaded", init);
 
 async function init() {
   bindEvents();
   const urlSrc = new URLSearchParams(window.location.search).get("src");
 
+  renderAll();
+
   if (urlSrc) {
     els.srcInput.value = urlSrc;
     await loadFromUrl(urlSrc);
-  } else {
-    renderAll();
   }
 }
 
@@ -57,7 +61,10 @@ function bindEvents() {
 
   els.fileInput.addEventListener("change", async (event) => {
     const [file] = event.target.files;
-    if (file) await loadFromFile(file);
+    if (file) {
+      els.fileName.textContent = file.name;
+      await loadFromFile(file);
+    }
   });
 
   els.searchInput.addEventListener("input", (event) => {
@@ -97,31 +104,52 @@ function bindEvents() {
 }
 
 async function loadFromUrl(src) {
+  const seq = ++activeLoadSeq;
+  setBusy(true);
   try {
-    setNotice("");
+    setNotice("Загружаем данные...", "loading");
     const response = await fetch(src, { cache: "no-store" });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const text = await response.text();
-    loadCsv(text);
+    if (seq !== activeLoadSeq) return;
+    if (!loadCsv(text)) return;
+    setNotice("");
+    els.fileInput.value = "";
+    els.fileName.textContent = "Выбрать CSV";
     const url = new URL(window.location.href);
     url.searchParams.set("src", src);
     window.history.replaceState({}, "", url);
   } catch (error) {
-    setNotice(`Не удалось загрузить CSV по URL: ${error.message}`);
+    if (seq === activeLoadSeq) setNotice(`Не удалось загрузить CSV по URL: ${error.message}`);
+  } finally {
+    if (seq === activeLoadSeq) setBusy(false);
   }
 }
 
 async function loadFromFile(file) {
+  const seq = ++activeLoadSeq;
+  setBusy(true);
   try {
-    setNotice("");
+    setNotice("Читаем файл...", "loading");
     const text = await file.text();
-    loadCsv(text);
+    if (seq !== activeLoadSeq) return;
+    if (!loadCsv(text)) return;
+    setNotice("");
+    els.srcInput.value = "";
     const url = new URL(window.location.href);
     url.searchParams.delete("src");
     window.history.replaceState({}, "", url);
   } catch (error) {
-    setNotice(`Не удалось прочитать CSV-файл: ${error.message}`);
+    if (seq === activeLoadSeq) setNotice(`Не удалось прочитать CSV-файл: ${error.message}`);
+  } finally {
+    if (seq === activeLoadSeq) setBusy(false);
   }
+}
+
+function setBusy(busy) {
+  els.srcButton.disabled = busy;
+  els.fileInput.disabled = busy;
+  document.body.classList.toggle("is-busy", busy);
 }
 
 function loadCsv(text) {
@@ -139,12 +167,16 @@ function loadCsv(text) {
     state.sort = { key: "place", dir: "asc" };
     els.searchInput.value = "";
     renderAll();
+    return true;
   } catch (error) {
-    setNotice(error.message);
+    if (error.issues) showCsvIssues(error.issues);
+    else setNotice(error.message);
+    return false;
   }
 }
 
 function parseCsv(text) {
+  if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
   const rows = [];
   let field = "";
   let row = [];
@@ -210,52 +242,21 @@ function normalizeRows(rows) {
   const missing = required.filter((field) => !resolvedHeaders[field]);
   if (missing.length) throw new Error(`В CSV нет обязательных колонок: ${missing.join(", ")}.`);
 
-  const participants = rows.map((row, index) => {
-    const get = (field) => row[lowerMap.get(field)] ?? "";
-    const requireCell = (field, header) => {
-      const value = row[header] ?? "";
-      if (!String(value).trim()) throw new Error(`В строке ${index + 2} пустое обязательное поле ${field}.`);
-      return value;
-    };
-    const gender = normalizeGender(requireCell("gender", resolvedHeaders.gender));
-    const event = normalizeEvent(requireCell("event", resolvedHeaders.event));
-    const group = normalizeResultGroup(requireCell("group", resolvedHeaders.group));
-    const course = normalizeCourse(requireCell("course", resolvedHeaders.course));
-    const cumulative = lapHeaders.map((header) => parseTimestamp(row[header], header, index));
-    const laps = cumulative.map((time, lapIndex) => {
-      if (time == null) return null;
-      const previous = lapIndex === 0 ? 0 : cumulative[lapIndex - 1];
-      if (previous == null) return null;
-      const lap = time - previous;
-      if (lap < 0) {
-        throw new Error(`Кумулятивное время в строке ${index + 2}, ${lapHeaders[lapIndex]} меньше предыдущей отметки.`);
-      }
-      return lap;
-    });
-
-    return {
-      id: `${get("bib") || "row"}-${index}`,
-      place: numberOrNull(get("place")) ?? index + 1,
-      bib: get("bib"),
-      name: get("name") || `Участник ${index + 1}`,
-      gender: get("gender"),
-      genderLabel: gender.label,
-      eventKey: event.key,
-      eventLabel: event.label,
-      groupKey: group.key,
-      groupLabel: group.label,
-      courseKey: course.key,
-      courseLabel: course.label,
-      scoreKey: `${event.key}::${course.key}::${group.key}`,
-      laps,
-      cumulative,
-      total: lastNumber(cumulative),
-      bestLap: minNumber(laps),
-      avgLap: average(laps),
-      lapSpread: spread(laps),
-      completedLaps: cumulative.filter((time) => time != null).length
-    };
+  const participants = [];
+  const issues = [];
+  rows.forEach((row, index) => {
+    try {
+      participants.push(buildParticipant(row, index, lapHeaders, resolvedHeaders));
+    } catch (error) {
+      issues.push(error.message);
+    }
   });
+
+  if (issues.length) {
+    const error = new Error(`Проблемных строк: ${issues.length}.`);
+    error.issues = issues;
+    throw error;
+  }
 
   const positionsByLap = computePositionsByGroup(participants, lapHeaders.length);
   const leadersByLap = computeLeadersByGroup(participants, lapHeaders.length);
@@ -271,6 +272,56 @@ function normalizeRows(rows) {
   return { participants, laps: lapHeaders.map(lapLabel) };
 }
 
+function buildParticipant(row, index, lapHeaders, resolvedHeaders) {
+  const requireCell = (field, header) => {
+    const value = row[header] ?? "";
+    if (!String(value).trim()) throw new Error(`В строке ${index + 2} пустое обязательное поле ${field}.`);
+    return value;
+  };
+  const place = normalizePlace(requireCell("place", resolvedHeaders.place), index);
+  const bib = requireCell("bib", resolvedHeaders.bib);
+  const name = requireCell("name", resolvedHeaders.name);
+  const gender = normalizeGender(requireCell("gender", resolvedHeaders.gender));
+  const event = normalizeEvent(requireCell("event", resolvedHeaders.event));
+  const group = normalizeResultGroup(requireCell("group", resolvedHeaders.group));
+  const course = normalizeCourse(requireCell("course", resolvedHeaders.course));
+  const cumulative = lapHeaders.map((header) => parseTimestamp(row[header], header, index));
+  const laps = cumulative.map((time, lapIndex) => {
+    if (time == null) return null;
+    const previous = lapIndex === 0 ? 0 : cumulative[lapIndex - 1];
+    if (previous == null) return null;
+    const lap = time - previous;
+    if (lap < 0) {
+      throw new Error(`Кумулятивное время в строке ${index + 2}, ${lapHeaders[lapIndex]} меньше предыдущей отметки.`);
+    }
+    return lap;
+  });
+
+  return {
+    id: `${bib}-${index}`,
+    place: place.value,
+    placeLabel: place.label,
+    placeStatus: place.status,
+    bib,
+    name,
+    genderLabel: gender.label,
+    eventKey: event.key,
+    eventLabel: event.label,
+    groupKey: group.key,
+    groupLabel: group.label,
+    courseKey: course.key,
+    courseLabel: course.label,
+    scoreKey: `${event.key}::${course.key}::${group.key}`,
+    laps,
+    cumulative,
+    total: lastNumber(cumulative),
+    bestLap: minNumber(laps),
+    avgLap: average(laps),
+    lapSpread: spread(laps),
+    completedLaps: cumulative.filter((time) => time != null).length
+  };
+}
+
 function findHeader(lowerMap, candidates) {
   return candidates.map((candidate) => lowerMap.get(candidate)).find(Boolean) ?? null;
 }
@@ -278,6 +329,19 @@ function findHeader(lowerMap, candidates) {
 function lapLabel(header) {
   const match = String(header).match(/\d+/);
   return match ? match[0] : header;
+}
+
+const PLACE_STATUSES = new Set(["DNF", "DNS", "DSQ"]);
+
+function normalizePlace(value, index) {
+  const raw = String(value ?? "").trim();
+  const numeric = numberOrNull(raw);
+  if (numeric != null) return { value: numeric, label: String(numeric), status: null };
+
+  const status = raw.toUpperCase();
+  if (PLACE_STATUSES.has(status)) return { value: null, label: status, status };
+
+  throw new Error(`В строке ${index + 2} место должно быть числом или статусом (DNF, DNS, DSQ): ${raw}.`);
 }
 
 function normalizeGender(value) {
@@ -447,6 +511,10 @@ function lapCountLabel(participants) {
 function renderCard() {
   const participant = getSelectedParticipant();
   if (!participant) {
+    if (!state.participants.length) {
+      els.participantCard.innerHTML = `<p class="muted">Загрузите CSV по ссылке или с диска, чтобы увидеть результаты.</p>`;
+      return;
+    }
     els.participantCard.innerHTML = `<span class="muted">Выберите участника</span>`;
     return;
   }
@@ -484,7 +552,7 @@ function renderCard() {
       </div>
     </dl>
     <div class="card-stats">
-      <div><span>Место</span><strong>${participant.place}</strong></div>
+      <div><span>Место</span><strong>${escapeHtml(participant.placeLabel)}</strong></div>
       <div><span>Финиш</span><strong>${formatTime(participant.total)}</strong></div>
       <div><span>Отставание</span><strong>${formatGap(participant.finishGap)}</strong></div>
       <div><span>Лучший круг</span><strong>${formatTime(participant.bestLap)}</strong></div>
@@ -540,7 +608,7 @@ function renderTable() {
             title="${favorite ? "Убрать с графиков" : "Показать на графиках"}"
           >${favorite ? "★" : "☆"}</button>
         </td>
-        <td>${participant.place}</td>
+        <td>${escapeHtml(participant.placeLabel)}</td>
         <td>${escapeHtml(participant.bib)}</td>
         <td>${escapeHtml(participant.name)}</td>
         <td>${escapeHtml(participant.eventLabel)}</td>
@@ -575,6 +643,9 @@ function renderCharts() {
     return;
   }
 
+  const officialGroupSelected = state.group !== "all" || groupLabels().length === 1;
+  updateChartTabs(officialGroupSelected);
+
   if (!state.participants.length) {
     renderChartScope([]);
     renderEmptyCharts("Загрузите CSV, чтобы построить графики");
@@ -596,7 +667,6 @@ function renderCharts() {
   }
 
   const participants = withGroupMetrics(chartParticipants);
-  const officialGroupSelected = state.group !== "all" || groupLabels().length === 1;
   const x = state.laps;
   const commonLayout = {
     margin: { t: 18, r: 22, b: 48, l: 56 },
@@ -721,7 +791,7 @@ function traces(participants, x, key, mode) {
       y: participant[key],
       type: "scatter",
       mode: "lines+markers",
-      name: `${showEvent ? `${participant.eventLabel} · ` : ""}${participant.bib} ${participant.name}`,
+      name: sanitizeTraceName(`${showEvent ? `${participant.eventLabel} · ` : ""}${participant.bib} ${participant.name}`),
       line: { color: palette[index % palette.length], width },
       marker: { size: selected ? 8 : 6 },
       opacity,
@@ -759,9 +829,28 @@ function niceTimeStep(target) {
     .find((step) => step >= target) ?? 7200;
 }
 
+const OFFICIAL_CHART_IDS = ["gapChart", "positionChart"];
+
+function updateChartTabs(officialGroupSelected) {
+  els.tabs.forEach((tab) => {
+    const locked = OFFICIAL_CHART_IDS.includes(tab.dataset.chart) && !officialGroupSelected;
+    tab.disabled = locked;
+    tab.classList.toggle("is-disabled", locked);
+    tab.title = locked ? "Доступно после выбора зачета" : "";
+  });
+
+  if (!officialGroupSelected && OFFICIAL_CHART_IDS.includes(state.activeChart)) {
+    setActiveChart("cumulativeChart");
+  }
+}
+
 function setActiveChart(id) {
   state.activeChart = id;
-  els.tabs.forEach((tab) => tab.classList.toggle("is-active", tab.dataset.chart === id));
+  els.tabs.forEach((tab) => {
+    const active = tab.dataset.chart === id;
+    tab.classList.toggle("is-active", active);
+    tab.setAttribute("aria-selected", String(active));
+  });
   els.charts.forEach((chart) => chart.classList.toggle("is-active", chart.id === id));
   if (window.Plotly) requestAnimationFrame(resizeActiveChart);
 }
@@ -777,7 +866,7 @@ function toggleSort(key) {
   if (state.sort.key === key) {
     state.sort.dir = state.sort.dir === "asc" ? "desc" : "asc";
   } else {
-    state.sort = { key, dir: key === "name" ? "asc" : "asc" };
+    state.sort = { key, dir: "asc" };
   }
   renderTable();
 }
@@ -814,18 +903,6 @@ function getScopeParticipants() {
 
 function isCourseComparable() {
   return new Set(getScopeParticipants().map((participant) => participant.courseKey)).size <= 1;
-}
-
-function isScopeComparable() {
-  return isCourseComparable() && new Set(getScopeParticipants().map((participant) => participant.scoreKey)).size <= 1;
-}
-
-function courseLabels() {
-  return [...new Set(getScopeParticipants().map((participant) => participant.courseLabel))];
-}
-
-function eventLabels() {
-  return [...new Set(getScopeParticipants().map((participant) => participant.eventLabel))];
 }
 
 function groupLabels() {
@@ -922,13 +999,6 @@ function ensureSelectedVisible() {
   }
 }
 
-function prioritizeParticipants(participants) {
-  if (!state.favorites.size) return participants.slice(0, 12);
-  const highlighted = participants.filter((participant) => state.favorites.has(participant.id) || participant.id === state.selectedId);
-  const rest = participants.filter((participant) => !highlighted.includes(participant));
-  return [...highlighted, ...rest].slice(0, 12);
-}
-
 function compareSortValue(a, b, key) {
   if (key.startsWith("lap-")) {
     const index = Number(key.split("-")[1]);
@@ -1022,9 +1092,39 @@ function formatGap(value) {
   return `+${formatTime(value)}`;
 }
 
-function setNotice(message) {
+function setNotice(message, variant = "error") {
   els.notice.textContent = message;
   els.notice.classList.toggle("is-hidden", !message);
+  els.notice.classList.toggle("is-loading", Boolean(message) && variant === "loading");
+}
+
+function showCsvIssues(issues) {
+  const limit = 50;
+  const shown = issues.slice(0, limit);
+  const extra = issues.length - shown.length;
+  const list = shown.map((issue) => `<li>${escapeHtml(issue)}</li>`).join("");
+  const more = extra > 0
+    ? `<p class="notice-more">...и еще ${extra} ${pluralRu(extra, "строка", "строки", "строк")}.</p>`
+    : "";
+
+  els.notice.innerHTML = `
+    <p class="notice-title">Файл не загружен. Проблемных строк: ${issues.length}. Исправьте их и загрузите снова.</p>
+    <ul class="notice-list">${list}</ul>
+    ${more}
+  `;
+  els.notice.classList.remove("is-hidden", "is-loading");
+}
+
+function pluralRu(n, one, few, many) {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return one;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return few;
+  return many;
+}
+
+function sanitizeTraceName(value) {
+  return String(value ?? "").replace(/[<>]/g, " ").trim();
 }
 
 function escapeHtml(value) {
