@@ -258,11 +258,13 @@ function normalizeRows(rows) {
     throw error;
   }
 
-  const positionsByLap = computePositionsByGroup(participants, lapHeaders.length);
-  const leadersByLap = computeLeadersByGroup(participants, lapHeaders.length);
+  const officialParticipants = participants.filter(isOfficialFinisher);
+  const positionsByLap = computePositionsByGroup(officialParticipants, lapHeaders.length);
+  const leadersByLap = computeLeadersByGroup(officialParticipants, lapHeaders.length);
   participants.forEach((participant) => {
-    participant.positions = positionsByLap.get(participant.id);
+    participant.positions = positionsByLap.get(participant.id) ?? Array(lapHeaders.length).fill(null);
     participant.gaps = participant.cumulative.map((time, lapIndex) => {
+      if (!isOfficialFinisher(participant)) return null;
       const leaderTime = leadersByLap.get(participant.scoreKey)?.[lapIndex];
       return time == null || leaderTime == null ? null : time - leaderTime;
     });
@@ -336,12 +338,14 @@ const PLACE_STATUSES = new Set(["DNF", "DNS", "DSQ"]);
 function normalizePlace(value, index) {
   const raw = String(value ?? "").trim();
   const numeric = numberOrNull(raw);
-  if (numeric != null) return { value: numeric, label: String(numeric), status: null };
+  if (numeric != null && Number.isInteger(numeric) && numeric > 0) {
+    return { value: numeric, label: String(numeric), status: null };
+  }
 
   const status = raw.toUpperCase();
   if (PLACE_STATUSES.has(status)) return { value: null, label: status, status };
 
-  throw new Error(`В строке ${index + 2} место должно быть числом или статусом (DNF, DNS, DSQ): ${raw}.`);
+  throw new Error(`В строке ${index + 2} место должно быть положительным целым числом или статусом (DNF, DNS, DSQ): ${raw}.`);
 }
 
 function normalizeGender(value) {
@@ -428,6 +432,10 @@ function spread(values) {
 function average(values) {
   const valid = values.filter((value) => Number.isFinite(value));
   return valid.length ? valid.reduce((sum, value) => sum + value, 0) / valid.length : null;
+}
+
+function isOfficialFinisher(participant) {
+  return !participant.placeStatus;
 }
 
 function computeLeaders(participants, lapCount) {
@@ -521,6 +529,10 @@ function renderCard() {
 
   const favorite = state.favorites.has(participant.id);
   const trend = getTrend(participant);
+  const finishLabel = isOfficialFinisher(participant) ? "Финиш" : "Последняя отметка";
+  const finishValue = isOfficialFinisher(participant)
+    ? formatTime(participant.total)
+    : formatStatusProgress(participant);
 
   els.participantCard.innerHTML = `
     <header>
@@ -553,7 +565,7 @@ function renderCard() {
     </dl>
     <div class="card-stats">
       <div><span>Место</span><strong>${escapeHtml(participant.placeLabel)}</strong></div>
-      <div><span>Финиш</span><strong>${formatTime(participant.total)}</strong></div>
+      <div><span>${finishLabel}</span><strong>${escapeHtml(finishValue)}</strong></div>
       <div><span>Отставание</span><strong>${formatGap(participant.finishGap)}</strong></div>
       <div><span>Лучший круг</span><strong>${formatTime(participant.bestLap)}</strong></div>
       <div><span>Разброс кругов</span><strong>${formatTime(participant.lapSpread)}</strong></div>
@@ -615,7 +627,7 @@ function renderTable() {
         <td>${escapeHtml(participant.genderLabel)}</td>
         <td>${escapeHtml(participant.groupLabel)}</td>
         <td>${escapeHtml(participant.courseLabel)}</td>
-        <td>${formatTime(participant.total)}</td>
+        <td>${formatTableFinish(participant)}</td>
         <td>${formatTime(participant.bestLap)}</td>
         ${lapCells}
       </tr>
@@ -765,7 +777,8 @@ function toggleFavorite(id) {
 }
 
 function withGroupMetrics(participants) {
-  const scope = state.group === "all" ? getCourseParticipants() : getScopeParticipants();
+  const scope = (state.group === "all" ? getCourseParticipants() : getScopeParticipants())
+    .filter(isOfficialFinisher);
   const positionsByLap = computePositionsByGroup(scope, state.laps.length);
   const leadersByLap = computeLeadersByGroup(scope, state.laps.length);
 
@@ -773,6 +786,7 @@ function withGroupMetrics(participants) {
     ...participant,
     positions: positionsByLap.get(participant.id) ?? participant.positions,
     gaps: participant.cumulative.map((time, lapIndex) => {
+      if (!isOfficialFinisher(participant)) return null;
       const leaderTime = leadersByLap.get(participant.scoreKey)?.[lapIndex];
       return time == null || leaderTime == null ? null : time - leaderTime;
     })
@@ -1004,6 +1018,9 @@ function compareSortValue(a, b, key) {
     const index = Number(key.split("-")[1]);
     return compareValues(a.laps[index], b.laps[index]);
   }
+  if (key === "total") {
+    return compareValues(isOfficialFinisher(a) ? a.total : null, isOfficialFinisher(b) ? b.total : null);
+  }
   return compareValues(a[key], b[key]);
 }
 
@@ -1025,16 +1042,21 @@ function getTrend(participant) {
   const best = participant.bestLap;
   const spreadValue = participant.lapSpread;
   const notes = [];
+  const official = isOfficialFinisher(participant);
 
   if (first != null && last != null && first > 0) {
     const finishDelta = last - first;
     const finishDeltaRatio = finishDelta / first;
     if (Math.abs(finishDeltaRatio) <= 0.02) {
-      notes.push("Финишировал в темпе первого круга.");
+      notes.push(official ? "Финишировал в темпе первого круга." : "Отмеченные круги прошел в ровном темпе.");
     } else if (finishDeltaRatio < 0) {
-      notes.push(`Ускорился к финишу: последний круг быстрее первого на ${formatTime(Math.abs(finishDelta))}.`);
+      notes.push(official
+        ? `Ускорился к финишу: последний круг быстрее первого на ${formatTime(Math.abs(finishDelta))}.`
+        : `Последний отмеченный круг быстрее первого на ${formatTime(Math.abs(finishDelta))}.`);
     } else {
-      notes.push(`Темп к концу снизился: последний круг медленнее первого на ${formatTime(finishDelta)}.`);
+      notes.push(official
+        ? `Темп к концу снизился: последний круг медленнее первого на ${formatTime(finishDelta)}.`
+        : `Темп на последнем отмеченном круге снизился: он медленнее первого на ${formatTime(finishDelta)}.`);
     }
   }
 
@@ -1090,6 +1112,16 @@ function formatGap(value) {
   if (!Number.isFinite(value)) return "-";
   if (Math.abs(value) < 0.5) return "0:00";
   return `+${formatTime(value)}`;
+}
+
+function formatStatusProgress(participant) {
+  return Number.isFinite(participant.total) ? formatTime(participant.total) : participant.placeLabel;
+}
+
+function formatTableFinish(participant) {
+  return isOfficialFinisher(participant)
+    ? formatTime(participant.total)
+    : escapeHtml(participant.placeLabel);
 }
 
 function setNotice(message, variant = "error") {
