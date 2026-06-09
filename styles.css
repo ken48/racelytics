@@ -474,7 +474,28 @@ body.is-busy .file-picker {
 .tab:disabled,
 .tab.is-disabled {
   opacity: 0.45;
-  cursor: not-allowed;
+  cursor: default;
+}
+
+.tab-hint {
+  position: fixed;
+  z-index: 60;
+  max-width: 290px;
+  border-radius: 8px;
+  background: var(--ink);
+  color: #fff;
+  padding: 9px 12px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1.32;
+  box-shadow: 0 8px 24px rgba(23, 32, 28, 0.22);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 90ms ease;
+}
+
+.tab-hint.is-visible {
+  opacity: 1;
 }
 
 .chart-scope {
@@ -507,8 +528,22 @@ body.is-busy .file-picker {
   min-width: 0;
 }
 
+.chart-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  align-items: stretch;
+  padding: 10px 12px 0;
+}
+
+.chart-row.has-comparison {
+  grid-template-columns: minmax(0, 440px) minmax(280px, 1fr);
+}
+
 .comparison-panel {
-  margin: 8px 12px 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fff;
@@ -532,13 +567,20 @@ body.is-busy .file-picker {
 }
 
 .comparison-table-wrap {
-  overflow-x: auto;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
   border-top: 1px solid var(--line);
 }
 
 .comparison-table {
-  min-width: 720px;
-  font-size: 0.88rem;
+  width: 100%;
+  font-size: 0.84rem;
+}
+
+.comparison-table tbody th {
+  white-space: normal;
+  min-width: 118px;
 }
 
 .comparison-table th:first-child,
@@ -578,7 +620,6 @@ body.is-busy .file-picker {
 
 .charts {
   min-height: 460px;
-  padding: 10px 12px 0;
 }
 
 .chart {
@@ -680,6 +721,10 @@ tbody tr.is-favorite {
   .toolbar,
   .layout {
     grid-template-columns: 1fr;
+  }
+
+  .chart-row.has-comparison {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .side-panel {

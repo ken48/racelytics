@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Racelytics</title>
     <link rel="icon" href="racelytics-icon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="styles.css?v=45">
+    <link rel="stylesheet" href="styles.css?v=49">
     <script src="https://cdn.plot.ly/plotly-2.35.2.min.js" defer></script>
-    <script src="app.js?v=46" defer></script>
+    <script src="app.js?v=49" defer></script>
   </head>
   <body>
     <main class="app-shell">
@@ -79,13 +79,15 @@
             <button class="tab" type="button" role="tab" aria-selected="false" aria-controls="positionChart" data-chart="positionChart">Позиция</button>
           </div>
           <div id="chartScope" class="chart-scope"></div>
-          <section id="comparisonPanel" class="comparison-panel is-hidden" aria-label="Табличные данные активного графика"></section>
 
-          <section class="charts" aria-label="Графики гонки">
-            <div id="cumulativeChart" class="chart is-active" role="tabpanel"></div>
-            <div id="lapChart" class="chart" role="tabpanel"></div>
-            <div id="positionChart" class="chart" role="tabpanel"></div>
-          </section>
+          <div class="chart-row">
+            <section class="charts" aria-label="Графики гонки">
+              <div id="cumulativeChart" class="chart is-active" role="tabpanel"></div>
+              <div id="lapChart" class="chart" role="tabpanel"></div>
+              <div id="positionChart" class="chart" role="tabpanel"></div>
+            </section>
+            <section id="comparisonPanel" class="comparison-panel is-hidden" aria-label="Табличные данные активного графика"></section>
+          </div>
 
           <section class="table-wrap" aria-label="Таблица результатов">
             <table>

@@ -26,6 +26,7 @@ const els = {
   lapCount: document.querySelector("#lapCount"),
   participantCard: document.querySelector("#participantCard"),
   chartScope: document.querySelector("#chartScope"),
+  chartRow: document.querySelector(".chart-row"),
   comparisonPanel: document.querySelector("#comparisonPanel"),
   tableHead: document.querySelector("#tableHead"),
   tableBody: document.querySelector("#tableBody"),
@@ -100,6 +101,10 @@ function bindEvents() {
       if (tab.getAttribute("aria-disabled") === "true") return;
       setActiveChart(tab.dataset.chart);
     });
+    tab.addEventListener("mouseenter", () => showTabHint(tab));
+    tab.addEventListener("mouseleave", hideTabHint);
+    tab.addEventListener("focus", () => showTabHint(tab));
+    tab.addEventListener("blur", hideTabHint);
   });
 
   window.addEventListener("resize", debounce(() => {
@@ -516,7 +521,6 @@ function renderAll() {
   renderCard();
   renderTable();
   renderCharts();
-  renderComparisonPanel();
   setActiveChart(state.activeChart);
 }
 
@@ -779,6 +783,7 @@ function renderComparisonPanel() {
   }
 
   els.comparisonPanel.classList.remove("is-hidden");
+  els.chartRow.classList.add("has-comparison");
 
   if (!isCourseComparable()) {
     els.comparisonPanel.innerHTML = `
@@ -822,6 +827,7 @@ function renderComparisonPanel() {
 function hideComparisonPanel() {
   els.comparisonPanel.classList.add("is-hidden");
   els.comparisonPanel.innerHTML = "";
+  els.chartRow.classList.remove("has-comparison");
 }
 
 function hasMixedComparisonContext(participants) {
@@ -968,12 +974,43 @@ function updateChartTabs(officialGroupSelected) {
     const locked = OFFICIAL_CHART_IDS.includes(tab.dataset.chart) && !officialGroupSelected;
     tab.classList.toggle("is-disabled", locked);
     tab.setAttribute("aria-disabled", String(locked));
-    tab.title = locked ? "Позиция доступна, когда выбран один зачет. В режиме всех зачетов позиции нельзя смешивать." : "";
+    if (locked) {
+      tab.dataset.hint = "Покажет, как менялась позиция в зачёте по кругам. Доступно для одного зачёта — выберите его в фильтре «Зачёт».";
+    } else {
+      delete tab.dataset.hint;
+      if (tabHintEl && tabHintEl.dataset.for === tab.dataset.chart) hideTabHint();
+    }
   });
 
   if (!officialGroupSelected && OFFICIAL_CHART_IDS.includes(state.activeChart)) {
     setActiveChart("cumulativeChart");
   }
+}
+
+let tabHintEl = null;
+
+function showTabHint(tab) {
+  const hint = tab.dataset.hint;
+  if (!hint) return;
+  if (!tabHintEl) {
+    tabHintEl = document.createElement("div");
+    tabHintEl.className = "tab-hint";
+    document.body.appendChild(tabHintEl);
+  }
+  tabHintEl.textContent = hint;
+  tabHintEl.dataset.for = tab.dataset.chart;
+  tabHintEl.style.visibility = "hidden";
+  tabHintEl.classList.add("is-visible");
+
+  const rect = tab.getBoundingClientRect();
+  const left = Math.max(10, Math.min(rect.left, window.innerWidth - tabHintEl.offsetWidth - 10));
+  tabHintEl.style.left = `${left}px`;
+  tabHintEl.style.top = `${rect.bottom + 8}px`;
+  tabHintEl.style.visibility = "visible";
+}
+
+function hideTabHint() {
+  if (tabHintEl) tabHintEl.classList.remove("is-visible");
 }
 
 function setActiveChart(id) {
