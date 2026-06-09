@@ -18,7 +18,6 @@ const els = {
   srcInput: document.querySelector("#srcInput"),
   urlForm: document.querySelector("#urlForm"),
   fileInput: document.querySelector("#fileInput"),
-  dropZone: document.querySelector("#dropZone"),
   searchInput: document.querySelector("#searchInput"),
   eventSelect: document.querySelector("#eventSelect"),
   courseSelect: document.querySelector("#courseSelect"),
@@ -63,25 +62,6 @@ function bindEvents() {
     if (file) await loadFromFile(file);
   });
 
-  ["dragenter", "dragover"].forEach((eventName) => {
-    els.dropZone.addEventListener(eventName, (event) => {
-      event.preventDefault();
-      els.dropZone.classList.add("is-dragover");
-    });
-  });
-
-  ["dragleave", "drop"].forEach((eventName) => {
-    els.dropZone.addEventListener(eventName, (event) => {
-      event.preventDefault();
-      els.dropZone.classList.remove("is-dragover");
-    });
-  });
-
-  els.dropZone.addEventListener("drop", async (event) => {
-    const [file] = event.dataTransfer.files;
-    if (file) await loadFromFile(file);
-  });
-
   els.searchInput.addEventListener("input", (event) => {
     state.search = event.target.value.trim().toLowerCase();
     ensureSelectedVisible();
@@ -121,8 +101,7 @@ function bindEvents() {
 async function loadFromUrl(src) {
   try {
     setNotice("");
-    const csvUrl = await resolveCsvUrl(src);
-    const response = await fetch(csvUrl, { cache: "no-store" });
+    const response = await fetch(src, { cache: "no-store" });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const text = await response.text();
     loadCsv(text, src);
@@ -131,27 +110,6 @@ async function loadFromUrl(src) {
     window.history.replaceState({}, "", url);
   } catch (error) {
     setNotice(`Не удалось загрузить CSV по URL: ${error.message}`);
-  }
-}
-
-async function resolveCsvUrl(src) {
-  if (!isYandexDiskUrl(src)) return src;
-
-  const apiUrl = `https://cloud-api.yandex.net/v1/disk/public/resources/download?public_key=${encodeURIComponent(src)}`;
-  const response = await fetch(apiUrl, { cache: "no-store" });
-  if (!response.ok) throw new Error(`Яндекс.Диск не отдал ссылку на скачивание: HTTP ${response.status}`);
-
-  const payload = await response.json();
-  if (!payload.href) throw new Error("Яндекс.Диск не вернул прямую ссылку на файл");
-  return payload.href;
-}
-
-function isYandexDiskUrl(src) {
-  try {
-    const host = new URL(src).hostname;
-    return host === "disk.yandex.ru" || host.endsWith(".disk.yandex.ru") || host === "yadi.sk" || host.endsWith(".yadi.sk");
-  } catch {
-    return false;
   }
 }
 
@@ -283,6 +241,7 @@ function normalizeRows(rows) {
       total: lastNumber(cumulative),
       bestLap: minNumber(laps),
       avgLap: average(laps),
+      lapSpread: spread(laps),
       completedLaps: cumulative.filter((time) => time != null).length
     };
   });
@@ -295,6 +254,7 @@ function normalizeRows(rows) {
       const leaderTime = leadersByLap.get(participant.scoreKey)?.[lapIndex];
       return time == null || leaderTime == null ? null : time - leaderTime;
     });
+    participant.finishGap = lastNumber(participant.gaps);
   });
 
   return { participants, laps: lapHeaders.map(lapLabel) };
@@ -378,6 +338,17 @@ function lastNumber(values) {
 function minNumber(values) {
   const valid = values.filter((value) => Number.isFinite(value));
   return valid.length ? Math.min(...valid) : null;
+}
+
+function maxNumber(values) {
+  const valid = values.filter((value) => Number.isFinite(value));
+  return valid.length ? Math.max(...valid) : null;
+}
+
+function spread(values) {
+  const min = minNumber(values);
+  const max = maxNumber(values);
+  return min == null || max == null ? null : max - min;
 }
 
 function average(values) {
@@ -483,18 +454,40 @@ function renderCard() {
   els.participantCard.innerHTML = `
     <header>
       <div>
-        <span class="bib">#${escapeHtml(participant.bib)} · ${escapeHtml(participant.eventLabel)} · ${escapeHtml(participant.genderLabel)} · ${escapeHtml(participant.groupLabel)} · ${escapeHtml(participant.courseLabel)}</span>
         <h2>${escapeHtml(participant.name)}</h2>
       </div>
       <button class="favorite-btn ${favorite ? "is-on" : ""}" type="button" aria-label="Избранное" title="Избранное">★</button>
     </header>
+    <dl class="record-meta">
+      <div>
+        <dt>Номер</dt>
+        <dd>#${escapeHtml(participant.bib)}</dd>
+      </div>
+      <div>
+        <dt>Соревнование</dt>
+        <dd>${escapeHtml(participant.eventLabel)}</dd>
+      </div>
+      <div>
+        <dt>Зачет</dt>
+        <dd>${escapeHtml(participant.groupLabel)}</dd>
+      </div>
+      <div>
+        <dt>Трасса</dt>
+        <dd>${escapeHtml(participant.courseLabel)}</dd>
+      </div>
+      <div>
+        <dt>Пол</dt>
+        <dd>${escapeHtml(participant.genderLabel)}</dd>
+      </div>
+    </dl>
     <div class="card-stats">
       <div><span>Место</span><strong>${participant.place}</strong></div>
       <div><span>Финиш</span><strong>${formatTime(participant.total)}</strong></div>
+      <div><span>Отставание</span><strong>${formatGap(participant.finishGap)}</strong></div>
       <div><span>Лучший круг</span><strong>${formatTime(participant.bestLap)}</strong></div>
-      <div><span>Средний круг</span><strong>${formatTime(participant.avgLap)}</strong></div>
+      <div><span>Разброс кругов</span><strong>${formatTime(participant.lapSpread)}</strong></div>
     </div>
-    <p class="muted" style="margin-top: 12px">${trend}</p>
+    <p class="pace-note">${trend}</p>
   `;
 
   els.participantCard.querySelector(".favorite-btn").addEventListener("click", () => {
@@ -983,10 +976,58 @@ function getSelectedParticipant() {
 function getTrend(participant) {
   const first = participant.laps.find((lap) => Number.isFinite(lap));
   const last = lastNumber(participant.laps);
-  if (first == null || last == null) return "Нет полного тренда по кругам.";
-  const delta = last - first;
-  if (Math.abs(delta) < 0.5) return "Темп по кругам почти не изменился.";
-  return delta < 0 ? `Последний круг быстрее первого на ${formatTime(Math.abs(delta))}.` : `Последний круг медленнее первого на ${formatTime(delta)}.`;
+  const best = participant.bestLap;
+  const spreadValue = participant.lapSpread;
+  const notes = [];
+
+  if (first != null && last != null && first > 0) {
+    const finishDelta = last - first;
+    const finishDeltaRatio = finishDelta / first;
+    if (Math.abs(finishDeltaRatio) <= 0.02) {
+      notes.push("Финишировал в темпе первого круга.");
+    } else if (finishDeltaRatio < 0) {
+      notes.push(`Ускорился к финишу: последний круг быстрее первого на ${formatTime(Math.abs(finishDelta))}.`);
+    } else {
+      notes.push(`Темп к концу снизился: последний круг медленнее первого на ${formatTime(finishDelta)}.`);
+    }
+  }
+
+  if (spreadValue != null && best != null && best > 0) {
+    const spreadRatio = spreadValue / best;
+    if (spreadRatio <= 0.03) {
+      notes.push("Круги прошел очень ровно.");
+    } else if (spreadRatio <= 0.07) {
+      notes.push("Темп был достаточно ровный.");
+    } else {
+      notes.push("Темп был нестабильным.");
+    }
+  }
+
+  const outlier = getSlowLapOutlier(participant);
+  if (outlier) {
+    notes.push(`Самый долгий круг - ${outlier.label}.`);
+  }
+
+  return notes.join(" ") || "Пока мало данных, чтобы оценить темп по кругам.";
+}
+
+function getSlowLapOutlier(participant) {
+  const laps = participant.laps
+    .map((lap, index) => ({ lap, index }))
+    .filter((item) => Number.isFinite(item.lap));
+
+  if (laps.length < 3) return null;
+
+  const slowest = laps.reduce((max, item) => item.lap > max.lap ? item : max, laps[0]);
+  const otherLaps = laps.filter((item) => item.index !== slowest.index).map((item) => item.lap);
+  const baseline = average(otherLaps);
+
+  if (!baseline || (slowest.lap - baseline) / baseline < 0.07) return null;
+
+  return {
+    label: state.laps[slowest.index] ?? `Круг ${slowest.index + 1}`,
+    time: slowest.lap
+  };
 }
 
 function formatTime(value) {
@@ -997,6 +1038,12 @@ function formatTime(value) {
   const seconds = absolute - minutes * 60;
   const padded = seconds < 10 ? `0${seconds.toFixed(seconds % 1 ? 1 : 0)}` : seconds.toFixed(seconds % 1 ? 1 : 0);
   return `${sign}${minutes}:${padded}`;
+}
+
+function formatGap(value) {
+  if (!Number.isFinite(value)) return "-";
+  if (Math.abs(value) < 0.5) return "0:00";
+  return `+${formatTime(value)}`;
 }
 
 function setNotice(message) {
