@@ -8,12 +8,10 @@ const state = {
   course: "all",
   group: "all",
   sort: { key: "place", dir: "asc" },
-  activeChart: "cumulativeChart",
-  sourceLabel: ""
+  activeChart: "cumulativeChart"
 };
 
 const els = {
-  raceMeta: document.querySelector("#raceMeta"),
   notice: document.querySelector("#notice"),
   srcInput: document.querySelector("#srcInput"),
   urlForm: document.querySelector("#urlForm"),
@@ -104,7 +102,7 @@ async function loadFromUrl(src) {
     const response = await fetch(src, { cache: "no-store" });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const text = await response.text();
-    loadCsv(text, src);
+    loadCsv(text);
     const url = new URL(window.location.href);
     url.searchParams.set("src", src);
     window.history.replaceState({}, "", url);
@@ -117,7 +115,7 @@ async function loadFromFile(file) {
   try {
     setNotice("");
     const text = await file.text();
-    loadCsv(text, file.name);
+    loadCsv(text);
     const url = new URL(window.location.href);
     url.searchParams.delete("src");
     window.history.replaceState({}, "", url);
@@ -126,7 +124,7 @@ async function loadFromFile(file) {
   }
 }
 
-function loadCsv(text, sourceLabel) {
+function loadCsv(text) {
   try {
     const parsed = parseCsv(text);
     const normalized = normalizeRows(parsed);
@@ -139,7 +137,6 @@ function loadCsv(text, sourceLabel) {
     state.course = "all";
     state.group = "all";
     state.sort = { key: "place", dir: "asc" };
-    state.sourceLabel = sourceLabel;
     els.searchInput.value = "";
     renderAll();
   } catch (error) {
@@ -191,11 +188,9 @@ function parseCsv(text) {
 }
 
 function normalizeRows(rows) {
-  const required = ["place", "bib", "name", "gender"];
+  const required = ["event", "place", "bib", "name", "gender", "group", "course"];
   const headers = Object.keys(rows[0] ?? {});
   const lowerMap = new Map(headers.map((header) => [header.toLowerCase(), header]));
-  const missing = required.filter((field) => !lowerMap.has(field));
-  if (missing.length) throw new Error(`В CSV нет обязательных колонок: ${missing.join(", ")}.`);
 
   const lapHeaders = headers.filter((header) => /^lap\d*$/i.test(header.trim()));
   if (!lapHeaders.length) throw new Error("В CSV должны быть колонки кругов: lap1, lap2, lap3 и так далее.");
@@ -203,13 +198,29 @@ function normalizeRows(rows) {
   const eventHeader = findHeader(lowerMap, ["event", "event_id", "eventid", "race", "race_id", "raceid", "meet", "competition", "date", "day", "соревнование", "гонка", "старт", "дата", "протокол"]);
   const groupHeader = findHeader(lowerMap, ["group", "group_id", "groupid", "category", "division", "class", "wave", "зачет", "зачёт", "группа", "класс", "категория"]);
   const courseHeader = findHeader(lowerMap, ["course", "course_id", "courseid", "track", "track_id", "track_type", "route", "distance", "layout", "трасса", "дистанция", "маршрут", "тип_трассы"]);
+  const resolvedHeaders = {
+    event: eventHeader,
+    place: lowerMap.get("place"),
+    bib: lowerMap.get("bib"),
+    name: lowerMap.get("name"),
+    gender: lowerMap.get("gender"),
+    group: groupHeader,
+    course: courseHeader
+  };
+  const missing = required.filter((field) => !resolvedHeaders[field]);
+  if (missing.length) throw new Error(`В CSV нет обязательных колонок: ${missing.join(", ")}.`);
 
   const participants = rows.map((row, index) => {
     const get = (field) => row[lowerMap.get(field)] ?? "";
-    const gender = normalizeGender(get("gender"));
-    const event = normalizeEvent(eventHeader ? row[eventHeader] : "");
-    const group = normalizeResultGroup(groupHeader ? row[groupHeader] : get("gender"), gender);
-    const course = normalizeCourse(courseHeader ? row[courseHeader] : group.label);
+    const requireCell = (field, header) => {
+      const value = row[header] ?? "";
+      if (!String(value).trim()) throw new Error(`В строке ${index + 2} пустое обязательное поле ${field}.`);
+      return value;
+    };
+    const gender = normalizeGender(requireCell("gender", resolvedHeaders.gender));
+    const event = normalizeEvent(requireCell("event", resolvedHeaders.event));
+    const group = normalizeResultGroup(requireCell("group", resolvedHeaders.group));
+    const course = normalizeCourse(requireCell("course", resolvedHeaders.course));
     const cumulative = lapHeaders.map((header) => parseTimestamp(row[header], header, index));
     const laps = cumulative.map((time, lapIndex) => {
       if (time == null) return null;
@@ -284,9 +295,8 @@ function normalizeGender(value) {
   return { key: normalized || "unknown", label: raw || "Не указан" };
 }
 
-function normalizeResultGroup(value, fallback) {
+function normalizeResultGroup(value) {
   const raw = String(value ?? "").trim();
-  if (!raw) return { key: fallback.key, label: fallback.label };
   return {
     key: raw.toLowerCase(),
     label: raw
@@ -296,16 +306,16 @@ function normalizeResultGroup(value, fallback) {
 function normalizeEvent(value) {
   const raw = String(value ?? "").trim();
   return {
-    key: (raw || "default-event").toLowerCase(),
-    label: raw || "Соревнование не указано"
+    key: raw.toLowerCase(),
+    label: raw
   };
 }
 
 function normalizeCourse(value) {
   const raw = String(value ?? "").trim();
   return {
-    key: (raw || "default-course").toLowerCase(),
-    label: raw || "Трасса не указана"
+    key: raw.toLowerCase(),
+    label: raw
   };
 }
 
@@ -423,13 +433,6 @@ function renderAll() {
 
 function renderSummary() {
   const participants = getScopeParticipants();
-  els.raceMeta.innerHTML = state.participants.length
-    ? `
-      <span>${escapeHtml(state.sourceLabel)}</span>
-      <span>${escapeHtml(scopeLabel())}</span>
-      <span>${participants.length} участников</span>
-    `
-    : "<span>Загрузите CSV по ссылке или файлом</span>";
   els.starterCount.textContent = participants.length;
   els.lapCount.textContent = lapCountLabel(participants);
 }
@@ -917,33 +920,6 @@ function ensureSelectedVisible() {
   if (!visible.some((participant) => participant.id === state.selectedId)) {
     state.selectedId = visible[0].id;
   }
-}
-
-function scopeLabel() {
-  const parts = [eventLabel(), courseLabel()];
-  if (state.group !== "all") parts.push(getScopeParticipants()[0]?.groupLabel ?? "Выбранный зачет");
-  return parts.filter(Boolean).join(" / ");
-}
-
-function eventLabel() {
-  if (state.event === "all") {
-    const labels = eventLabels();
-    return labels.length === 1 ? labels[0] : "Все соревнования";
-  }
-  return getEventParticipants()[0]?.eventLabel ?? "Выбранное соревнование";
-}
-
-function courseLabel() {
-  if (state.course === "all") return "Все трассы";
-  return getCourseParticipants()[0]?.courseLabel ?? "Выбранная трасса";
-}
-
-function groupLabel() {
-  if (state.group === "all") {
-    const labels = groupLabels();
-    return labels.length === 1 ? labels[0] : "Все зачеты";
-  }
-  return getScopeParticipants()[0]?.groupLabel ?? "Выбранный зачет";
 }
 
 function prioritizeParticipants(participants) {
