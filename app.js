@@ -266,7 +266,7 @@ function findHeader(lowerMap, candidates) {
 
 function lapLabel(header) {
   const match = String(header).match(/\d+/);
-  return match ? `Круг ${match[0]}` : header;
+  return match ? match[0] : header;
 }
 
 function normalizeGender(value) {
