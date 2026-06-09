@@ -708,7 +708,7 @@ function renderCharts() {
     hovermode: "x unified",
     legend: { orientation: "h", y: -0.22 },
     font: { family: "Inter, system-ui, sans-serif", color: "#17201c" },
-    xaxis: { title: "Круг", gridcolor: "#e2e8e2", zeroline: false },
+    xaxis: { title: "Круг", tickmode: "array", tickvals: x, ticktext: x, gridcolor: "#e2e8e2", zeroline: false },
     yaxis: { gridcolor: "#e2e8e2", zeroline: false }
   };
   const config = { responsive: true, displayModeBar: false };
