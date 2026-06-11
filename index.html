@@ -5,13 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Racelytics</title>
     <link rel="icon" href="racelytics-icon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="styles.css?v=50">
+    <link rel="stylesheet" href="styles.css?v=51">
     <script src="https://cdn.plot.ly/plotly-2.35.2.min.js" defer></script>
-    <script src="app.js?v=51" defer></script>
+    <script src="racelytics.lang.js?v=1" defer></script>
+    <script src="app.js?v=53" defer></script>
   </head>
   <body>
     <main class="app-shell">
-      <section class="topbar" aria-label="Загрузка данных гонки">
+      <section class="topbar" aria-label="Загрузка данных гонки" data-i18n-aria-label="ariaDataLoad">
         <div class="brand">
           <img class="mark" src="racelytics-icon.svg" alt="" aria-hidden="true">
           <div>
@@ -20,76 +21,78 @@
         </div>
 
         <form id="urlForm" class="source-form">
-          <label for="srcInput">Ссылка на CSV-файл</label>
+          <label for="srcInput" data-i18n="srcLabel">Ссылка на CSV-файл</label>
           <div class="input-row">
-            <input id="srcInput" name="src" type="text" inputmode="url" placeholder="https://example.com/results.csv или Google Sheets export">
-            <button type="submit">Загрузить</button>
+            <input id="srcInput" name="src" type="text" inputmode="url" placeholder="https://example.com/results.csv или Google Sheets export" data-i18n-placeholder="srcPlaceholder">
+            <button type="submit" data-i18n="loadBtn">Загрузить</button>
           </div>
         </form>
 
         <label class="file-picker" for="fileInput">
           <input id="fileInput" type="file" accept=".csv,text/csv">
-          <span>Локальный файл</span>
+          <span data-i18n="localFile">Локальный файл</span>
           <strong>Выбрать CSV</strong>
         </label>
+
+        <div class="lang-switch" role="group" aria-label="Язык интерфейса" data-i18n-aria-label="ariaLang"></div>
       </section>
 
       <section id="notice" class="notice is-hidden" role="status"></section>
 
-      <section class="toolbar" aria-label="Инструменты участников">
+      <section class="toolbar" aria-label="Инструменты участников" data-i18n-aria-label="ariaTools">
         <div class="search-box">
-          <label for="searchInput">Поиск</label>
-          <input id="searchInput" type="search" placeholder="Номер или имя">
+          <label for="searchInput" data-i18n="searchLabel">Поиск</label>
+          <input id="searchInput" type="search" placeholder="Номер или имя" data-i18n-placeholder="searchPlaceholder">
         </div>
         <div class="event-box">
-          <label for="eventSelect">Соревнование</label>
+          <label for="eventSelect" data-i18n="metaEvent">Соревнование</label>
           <select id="eventSelect"></select>
         </div>
         <div class="course-box">
-          <label for="courseSelect">Трасса</label>
+          <label for="courseSelect" data-i18n="metaCourse">Трасса</label>
           <select id="courseSelect"></select>
         </div>
         <div class="group-box">
-          <label for="groupSelect">Зачет</label>
+          <label for="groupSelect" data-i18n="metaGroup">Зачет</label>
           <select id="groupSelect"></select>
         </div>
-        <div class="metric-strip" aria-label="Сводка гонки">
+        <div class="metric-strip" aria-label="Сводка гонки" data-i18n-aria-label="ariaRaceSummary">
           <div>
-            <span>Участники</span>
+            <span data-i18n="statStarters">Участники</span>
             <strong id="starterCount">0</strong>
           </div>
           <div>
-            <span>Круги</span>
+            <span data-i18n="statLaps">Круги</span>
             <strong id="lapCount">0</strong>
           </div>
         </div>
       </section>
 
       <section class="layout">
-        <aside class="side-panel" aria-label="Выбранный участник">
+        <aside class="side-panel" aria-label="Выбранный участник" data-i18n-aria-label="ariaSelectedParticipant">
           <article id="participantCard" class="participant-card">
             <span class="muted">Выберите участника</span>
           </article>
         </aside>
 
         <section class="workspace">
-          <div class="tabs" role="tablist" aria-label="Графики">
-            <button class="tab is-active" type="button" role="tab" aria-selected="true" aria-controls="cumulativeChart" data-chart="cumulativeChart">Суммарное время</button>
-            <button class="tab" type="button" role="tab" aria-selected="false" aria-controls="lapChart" data-chart="lapChart">Круги</button>
-            <button class="tab" type="button" role="tab" aria-selected="false" aria-controls="positionChart" data-chart="positionChart">Позиция</button>
+          <div class="tabs" role="tablist" aria-label="Графики" data-i18n-aria-label="ariaCharts">
+            <button class="tab is-active" type="button" role="tab" aria-selected="true" aria-controls="cumulativeChart" data-chart="cumulativeChart" data-i18n="tabCumulative">Суммарное время</button>
+            <button class="tab" type="button" role="tab" aria-selected="false" aria-controls="lapChart" data-chart="lapChart" data-i18n="tabLaps">Круги</button>
+            <button class="tab" type="button" role="tab" aria-selected="false" aria-controls="positionChart" data-chart="positionChart" data-i18n="tabPosition">Позиция</button>
           </div>
           <div id="chartScope" class="chart-scope"></div>
 
           <div class="chart-row">
-            <section class="charts" aria-label="Графики гонки">
+            <section class="charts" aria-label="Графики гонки" data-i18n-aria-label="ariaRaceCharts">
               <div id="cumulativeChart" class="chart is-active" role="tabpanel"></div>
               <div id="lapChart" class="chart" role="tabpanel"></div>
               <div id="positionChart" class="chart" role="tabpanel"></div>
             </section>
-            <section id="comparisonPanel" class="comparison-panel is-hidden" aria-label="Табличные данные активного графика"></section>
+            <section id="comparisonPanel" class="comparison-panel is-hidden" aria-label="Табличные данные активного графика" data-i18n-aria-label="ariaComparison"></section>
           </div>
 
-          <section class="table-wrap" aria-label="Таблица результатов">
+          <section class="table-wrap" aria-label="Таблица результатов" data-i18n-aria-label="ariaResultsTable">
             <table>
               <thead>
                 <tr id="tableHead"></tr>

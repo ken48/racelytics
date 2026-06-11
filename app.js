@@ -1,3 +1,23 @@
+const LANG_STORAGE_KEY = "racelytics.lang";
+
+function detectLang() {
+  let saved = null;
+  try {
+    saved = localStorage.getItem(LANG_STORAGE_KEY);
+  } catch {
+    saved = null;
+  }
+  if (saved && I18N[saved]) return saved;
+  return String(navigator.language || "").toLowerCase().startsWith("ru") ? "ru" : "en";
+}
+
+function t(key, params) {
+  const entry = I18N[state.lang]?.[key] ?? I18N.ru[key] ?? key;
+  if (typeof entry === "function") return entry(params ?? {});
+  if (!params) return entry;
+  return entry.replace(/\{(\w+)\}/g, (match, name) => params[name] ?? match);
+}
+
 const state = {
   participants: [],
   laps: [],
@@ -8,7 +28,9 @@ const state = {
   course: "all",
   group: "all",
   sort: { key: "place", dir: "asc" },
-  activeChart: "cumulativeChart"
+  activeChart: "cumulativeChart",
+  lang: detectLang(),
+  fileLabel: null
 };
 
 const els = {
@@ -31,7 +53,8 @@ const els = {
   tableHead: document.querySelector("#tableHead"),
   tableBody: document.querySelector("#tableBody"),
   tabs: document.querySelectorAll(".tab"),
-  charts: document.querySelectorAll(".chart")
+  charts: document.querySelectorAll(".chart"),
+  langSwitch: document.querySelector(".lang-switch")
 };
 
 const chartIds = ["cumulativeChart", "lapChart", "positionChart"];
@@ -44,6 +67,8 @@ document.addEventListener("DOMContentLoaded", init);
 
 async function init() {
   bindEvents();
+  renderLangSwitch();
+  applyTranslations();
   const urlSrc = new URLSearchParams(window.location.search).get("src");
 
   renderAll();
@@ -63,10 +88,11 @@ function bindEvents() {
 
   els.fileInput.addEventListener("change", async (event) => {
     const [file] = event.target.files;
-    // Сбрасываем value, иначе повторный выбор того же файла не вызовет change
+    // Reset value so picking the same file again still fires "change"
     event.target.value = "";
     if (file) {
-      els.fileName.textContent = file.name;
+      state.fileLabel = file.name;
+      renderFileLabel();
       await loadFromFile(file);
     }
   });
@@ -114,23 +140,71 @@ function bindEvents() {
   }, 150));
 }
 
+function renderLangSwitch() {
+  els.langSwitch.innerHTML = "";
+  Object.keys(I18N).forEach((lang) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.dataset.lang = lang;
+    button.textContent = lang.toUpperCase();
+    button.addEventListener("click", () => setLang(lang));
+    els.langSwitch.appendChild(button);
+  });
+}
+
+function setLang(lang) {
+  if (!I18N[lang] || lang === state.lang) return;
+  state.lang = lang;
+  try {
+    localStorage.setItem(LANG_STORAGE_KEY, lang);
+  } catch {
+    // Storage may be unavailable (private mode); the choice just won't persist
+  }
+  applyTranslations();
+  renderAll();
+}
+
+function applyTranslations() {
+  document.documentElement.lang = state.lang;
+  document.querySelectorAll("[data-i18n]").forEach((el) => {
+    el.textContent = t(el.dataset.i18n);
+  });
+  document.querySelectorAll("[data-i18n-placeholder]").forEach((el) => {
+    el.placeholder = t(el.dataset.i18nPlaceholder);
+  });
+  document.querySelectorAll("[data-i18n-aria-label]").forEach((el) => {
+    el.setAttribute("aria-label", t(el.dataset.i18nAriaLabel));
+  });
+  els.langSwitch.querySelectorAll("button").forEach((button) => {
+    const active = button.dataset.lang === state.lang;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-pressed", String(active));
+  });
+  renderFileLabel();
+}
+
+function renderFileLabel() {
+  els.fileName.textContent = state.fileLabel ?? t("chooseCsv");
+}
+
 async function loadFromUrl(src) {
   const seq = ++activeLoadSeq;
   setBusy(true);
   try {
-    setNotice("Загружаем данные...", "loading");
+    setNotice(t("loadingUrl"), "loading");
     const response = await fetch(src, { cache: "no-store" });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const text = await response.text();
     if (seq !== activeLoadSeq) return;
     if (!loadCsv(text)) return;
     setNotice("");
-    els.fileName.textContent = "Выбрать CSV";
+    state.fileLabel = null;
+    renderFileLabel();
     const url = new URL(window.location.href);
     url.searchParams.set("src", src);
     window.history.replaceState({}, "", url);
   } catch (error) {
-    if (seq === activeLoadSeq) setNotice(`Не удалось загрузить CSV по URL: ${error.message}`);
+    if (seq === activeLoadSeq) setNotice(t("errLoadUrl", { message: error.message }));
   } finally {
     if (seq === activeLoadSeq) setBusy(false);
   }
@@ -140,7 +214,7 @@ async function loadFromFile(file) {
   const seq = ++activeLoadSeq;
   setBusy(true);
   try {
-    setNotice("Читаем файл...", "loading");
+    setNotice(t("loadingFile"), "loading");
     const text = await file.text();
     if (seq !== activeLoadSeq) return;
     if (!loadCsv(text)) return;
@@ -150,7 +224,7 @@ async function loadFromFile(file) {
     url.searchParams.delete("src");
     window.history.replaceState({}, "", url);
   } catch (error) {
-    if (seq === activeLoadSeq) setNotice(`Не удалось прочитать CSV-файл: ${error.message}`);
+    if (seq === activeLoadSeq) setNotice(t("errReadFile", { message: error.message }));
   } finally {
     if (seq === activeLoadSeq) setBusy(false);
   }
@@ -217,7 +291,7 @@ function parseCsv(text) {
 
   row.push(field);
   if (row.some((value) => value.trim() !== "")) rows.push(row);
-  if (rows.length < 2) throw new Error("CSV должен содержать строку заголовков и хотя бы одного участника.");
+  if (rows.length < 2) throw new Error(t("errCsvMinRows"));
 
   const headers = rows[0].map((header) => header.trim());
   return rows.slice(1).map((values) => {
@@ -235,10 +309,10 @@ function normalizeRows(rows) {
   const lowerMap = new Map(headers.map((header) => [header.toLowerCase(), header]));
 
   const lapHeaders = headers.filter((header) => /^lap\d+$/i.test(header.trim()));
-  if (!lapHeaders.length) throw new Error("В CSV должны быть колонки кругов: lap1, lap2, lap3 и так далее.");
+  if (!lapHeaders.length) throw new Error(t("errNoLapColumns"));
   const lapNumbers = lapHeaders.map((header) => Number(header.trim().match(/\d+/)[0]));
   if (!lapNumbers.every((number, index) => number === index + 1)) {
-    throw new Error("Колонки кругов должны идти по порядку без пропусков и дубликатов: lap1, lap2, lap3 и так далее.");
+    throw new Error(t("errLapOrder"));
   }
 
   const eventHeader = findHeader(lowerMap, ["event", "event_id", "eventid", "race", "race_id", "raceid", "meet", "competition", "date", "day", "соревнование", "гонка", "старт", "дата", "протокол"]);
@@ -254,7 +328,7 @@ function normalizeRows(rows) {
     course: courseHeader
   };
   const missing = required.filter((field) => !resolvedHeaders[field]);
-  if (missing.length) throw new Error(`В CSV нет обязательных колонок: ${missing.join(", ")}.`);
+  if (missing.length) throw new Error(t("errMissingColumns", { columns: missing.join(", ") }));
 
   const participants = [];
   const issues = [];
@@ -267,7 +341,7 @@ function normalizeRows(rows) {
   });
 
   if (issues.length) {
-    const error = new Error(`Проблемных строк: ${issues.length}.`);
+    const error = new Error(t("errIssuesCount", { count: issues.length }));
     error.issues = issues;
     throw error;
   }
@@ -288,7 +362,7 @@ function normalizeRows(rows) {
 function buildParticipant(row, index, lapHeaders, resolvedHeaders) {
   const requireCell = (field, header) => {
     const value = row[header] ?? "";
-    if (!String(value).trim()) throw new Error(`В строке ${index + 2} пустое обязательное поле ${field}.`);
+    if (!String(value).trim()) throw new Error(t("errEmptyField", { row: index + 2, field }));
     return value;
   };
   const place = normalizePlace(requireCell("place", resolvedHeaders.place), index);
@@ -305,7 +379,7 @@ function buildParticipant(row, index, lapHeaders, resolvedHeaders) {
     if (previous == null) return null;
     const lap = time - previous;
     if (lap < 0) {
-      throw new Error(`Кумулятивное время в строке ${index + 2}, ${lapHeaders[lapIndex]} меньше предыдущей отметки.`);
+      throw new Error(t("errLapDecreasing", { row: index + 2, header: lapHeaders[lapIndex] }));
     }
     return lap;
   });
@@ -317,7 +391,8 @@ function buildParticipant(row, index, lapHeaders, resolvedHeaders) {
     placeStatus: place.status,
     bib,
     name,
-    genderLabel: gender.label,
+    genderKey: gender.key,
+    genderRaw: gender.raw,
     eventKey: event.key,
     eventLabel: event.label,
     groupKey: group.key,
@@ -356,7 +431,7 @@ function normalizePlace(value, index) {
   const status = raw.toUpperCase();
   if (PLACE_STATUSES.has(status)) return { value: null, label: status, status };
 
-  throw new Error(`В строке ${index + 2} место должно быть положительным целым числом или статусом (DNF, DNS, DSQ): ${raw}.`);
+  throw new Error(t("errPlace", { row: index + 2, value: raw }));
 }
 
 function normalizeGender(value) {
@@ -364,14 +439,20 @@ function normalizeGender(value) {
   const normalized = raw.toLowerCase();
 
   if (["f", "female", "w", "woman", "women", "ж", "жен", "женщина", "женщины"].includes(normalized)) {
-    return { key: "F", label: "Ж" };
+    return { key: "F", raw };
   }
 
   if (["m", "male", "man", "men", "м", "муж", "мужчина", "мужчины"].includes(normalized)) {
-    return { key: "M", label: "М" };
+    return { key: "M", raw };
   }
 
-  return { key: normalized || "unknown", label: raw || "Не указан" };
+  return { key: null, raw };
+}
+
+function formatGender(participant) {
+  if (participant.genderKey === "F") return t("genderF");
+  if (participant.genderKey === "M") return t("genderM");
+  return participant.genderRaw || t("genderUnknown");
 }
 
 function normalizeResultGroup(value) {
@@ -403,15 +484,15 @@ function parseTimestamp(value, header, rowIndex) {
   if (!raw) return null;
 
   if (!/^\d{1,2}:\d{2}(?::\d{2})?$/.test(raw)) {
-    throw new Error(`Некорректная отметка времени в строке ${rowIndex + 2}, ${header}: ${raw}. Используйте формат [HH:]MM:SS.`);
+    throw new Error(t("errTimeFormat", { row: rowIndex + 2, header, value: raw }));
   }
 
   const parts = raw.split(":").map(Number);
   if (parts.length === 2) {
-    if (parts[1] > 59) throw new Error(`Некорректная отметка времени в строке ${rowIndex + 2}, ${header}: ${raw}.`);
+    if (parts[1] > 59) throw new Error(t("errTimeValue", { row: rowIndex + 2, header, value: raw }));
     return parts[0] * 60 + parts[1];
   }
-  if (parts[1] > 59 || parts[2] > 59) throw new Error(`Некорректная отметка времени в строке ${rowIndex + 2}, ${header}: ${raw}.`);
+  if (parts[1] > 59 || parts[2] > 59) throw new Error(t("errTimeValue", { row: rowIndex + 2, header, value: raw }));
   return parts[0] * 3600 + parts[1] * 60 + parts[2];
 }
 
@@ -546,16 +627,16 @@ function renderCard() {
   const participant = getSelectedParticipant();
   if (!participant) {
     if (!state.participants.length) {
-      els.participantCard.innerHTML = `<p class="muted">Загрузите CSV по ссылке или с диска, чтобы увидеть результаты.</p>`;
+      els.participantCard.innerHTML = `<p class="muted">${t("cardEmptyNoData")}</p>`;
       return;
     }
-    els.participantCard.innerHTML = `<span class="muted">Выберите участника</span>`;
+    els.participantCard.innerHTML = `<span class="muted">${t("cardEmptySelect")}</span>`;
     return;
   }
 
   const favorite = state.favorites.has(participant.id);
   const trend = getTrend(participant);
-  const finishLabel = isOfficialFinisher(participant) ? "Финиш" : "Последняя отметка";
+  const finishLabel = isOfficialFinisher(participant) ? t("finishLabel") : t("lastSplitLabel");
   const finishValue = isOfficialFinisher(participant)
     ? formatTime(participant.total)
     : formatStatusProgress(participant);
@@ -565,36 +646,36 @@ function renderCard() {
       <div>
         <h2>${escapeHtml(participant.name)}</h2>
       </div>
-      <button class="favorite-btn ${favorite ? "is-on" : ""}" type="button" aria-label="Избранное" title="Избранное">★</button>
+      <button class="favorite-btn ${favorite ? "is-on" : ""}" type="button" aria-label="${t("favorite")}" title="${t("favorite")}">★</button>
     </header>
     <dl class="record-meta">
       <div>
-        <dt>Номер</dt>
+        <dt>${t("metaBib")}</dt>
         <dd>#${escapeHtml(participant.bib)}</dd>
       </div>
       <div>
-        <dt>Соревнование</dt>
+        <dt>${t("metaEvent")}</dt>
         <dd>${escapeHtml(participant.eventLabel)}</dd>
       </div>
       <div>
-        <dt>Зачет</dt>
+        <dt>${t("metaGroup")}</dt>
         <dd>${escapeHtml(participant.groupLabel)}</dd>
       </div>
       <div>
-        <dt>Трасса</dt>
+        <dt>${t("metaCourse")}</dt>
         <dd>${escapeHtml(participant.courseLabel)}</dd>
       </div>
       <div>
-        <dt>Пол</dt>
-        <dd>${escapeHtml(participant.genderLabel)}</dd>
+        <dt>${t("metaGender")}</dt>
+        <dd>${escapeHtml(formatGender(participant))}</dd>
       </div>
     </dl>
     <div class="card-stats">
-      <div><span>Место</span><strong>${escapeHtml(participant.placeLabel)}</strong></div>
+      <div><span>${t("statPlace")}</span><strong>${escapeHtml(participant.placeLabel)}</strong></div>
       <div><span>${finishLabel}</span><strong>${escapeHtml(finishValue)}</strong></div>
-      <div><span>Отставание</span><strong>${formatGap(participant.finishGap)}</strong></div>
-      <div><span>Лучший круг</span><strong>${formatTime(participant.bestLap)}</strong></div>
-      <div><span>Разброс кругов</span><strong>${formatTime(participant.lapSpread)}</strong></div>
+      <div><span>${t("statGap")}</span><strong>${formatGap(participant.finishGap)}</strong></div>
+      <div><span>${t("statBestLap")}</span><strong>${formatTime(participant.bestLap)}</strong></div>
+      <div><span>${t("statLapSpread")}</span><strong>${formatTime(participant.lapSpread)}</strong></div>
     </div>
     <p class="pace-note">${trend}</p>
   `;
@@ -607,20 +688,20 @@ function renderCard() {
 function renderTable() {
   const headers = [
     { key: "favorite", label: "" },
-    { key: "place", label: "Место" },
-    { key: "bib", label: "Номер" },
-    { key: "name", label: "Имя" },
-    { key: "eventLabel", label: "Соревнование" },
-    { key: "genderLabel", label: "Пол" },
-    { key: "groupLabel", label: "Зачет" },
-    { key: "courseLabel", label: "Трасса" },
-    { key: "total", label: "Финиш" },
-    { key: "bestLap", label: "Лучший круг" },
+    { key: "place", label: t("statPlace") },
+    { key: "bib", label: t("metaBib") },
+    { key: "name", label: t("thName") },
+    { key: "eventLabel", label: t("metaEvent") },
+    { key: "gender", label: t("metaGender") },
+    { key: "groupLabel", label: t("metaGroup") },
+    { key: "courseLabel", label: t("metaCourse") },
+    { key: "total", label: t("finishLabel") },
+    { key: "bestLap", label: t("statBestLap") },
     ...state.laps.map((lap, index) => ({ key: `lap-${index}`, label: lap }))
   ];
 
   els.tableHead.innerHTML = headers.map((header) => {
-    if (header.key === "favorite") return `<th><span class="chart-column-title">График</span></th>`;
+    if (header.key === "favorite") return `<th><span class="chart-column-title">${t("chartColumn")}</span></th>`;
     const arrow = state.sort.key === header.key ? (state.sort.dir === "asc" ? "↑" : "↓") : "";
     return `<th><button type="button" data-sort="${header.key}">${header.label} ${arrow}</button></th>`;
   }).join("");
@@ -642,15 +723,15 @@ function renderTable() {
             type="button"
             data-favorite="${participant.id}"
             aria-pressed="${favorite}"
-            aria-label="${favorite ? "Убрать с графиков" : "Показать на графиках"}"
-            title="${favorite ? "Убрать с графиков" : "Показать на графиках"}"
+            aria-label="${favorite ? t("favRemove") : t("favAdd")}"
+            title="${favorite ? t("favRemove") : t("favAdd")}"
           >${favorite ? "★" : "☆"}</button>
         </td>
         <td>${escapeHtml(participant.placeLabel)}</td>
         <td>${escapeHtml(participant.bib)}</td>
         <td>${escapeHtml(participant.name)}</td>
         <td>${escapeHtml(participant.eventLabel)}</td>
-        <td>${escapeHtml(participant.genderLabel)}</td>
+        <td>${escapeHtml(formatGender(participant))}</td>
         <td>${escapeHtml(participant.groupLabel)}</td>
         <td>${escapeHtml(participant.courseLabel)}</td>
         <td>${formatTableFinish(participant)}</td>
@@ -682,7 +763,7 @@ let plotlyWaitTimer = null;
 function renderCharts() {
   if (!window.Plotly) {
     if (plotlyWaitedMs >= PLOTLY_WAIT_LIMIT_MS) {
-      renderEmptyCharts("Не удалось загрузить библиотеку графиков. Проверьте доступ к cdn.plot.ly и обновите страницу.");
+      renderEmptyCharts(t("plotlyFailed"));
       return;
     }
     clearTimeout(plotlyWaitTimer);
@@ -698,13 +779,13 @@ function renderCharts() {
 
   if (!state.participants.length) {
     renderChartScope([]);
-    renderEmptyCharts("Загрузите CSV, чтобы построить графики");
+    renderEmptyCharts(t("chartsEmptyNoData"));
     return;
   }
 
   if (!isCourseComparable()) {
     renderChartScope([]);
-    renderEmptyCharts("Выберите одну трассу, чтобы построить графики");
+    renderEmptyCharts(t("chartsEmptyCourse"));
     return;
   }
 
@@ -712,7 +793,7 @@ function renderCharts() {
   renderChartScope(chartParticipants);
 
   if (!chartParticipants.length) {
-    renderEmptyCharts("Нет участников для графика");
+    renderEmptyCharts(t("chartsEmptyNoParticipants"));
     return;
   }
 
@@ -725,7 +806,7 @@ function renderCharts() {
     hovermode: "x unified",
     legend: { orientation: "h", y: -0.22 },
     font: { family: "Inter, system-ui, sans-serif", color: "#17201c" },
-    xaxis: { title: "Круг", tickmode: "array", tickvals: x, ticktext: x, gridcolor: "#e2e8e2", zeroline: false },
+    xaxis: { title: t("axisLap"), tickmode: "array", tickvals: x, ticktext: x, gridcolor: "#e2e8e2", zeroline: false },
     yaxis: { gridcolor: "#e2e8e2", zeroline: false }
   };
   const config = { responsive: true, displayModeBar: false };
@@ -733,23 +814,23 @@ function renderCharts() {
   clearChartPlaceholder("cumulativeChart");
   Plotly.react("cumulativeChart", traces(participants, x, "cumulative", "time"), {
     ...commonLayout,
-    yaxis: { ...commonLayout.yaxis, title: "Суммарное время", ...timeTickConfig(participants.flatMap((participant) => participant.cumulative)) }
+    yaxis: { ...commonLayout.yaxis, title: t("axisCumulative"), ...timeTickConfig(participants.flatMap((participant) => participant.cumulative)) }
   }, config);
 
   clearChartPlaceholder("lapChart");
   Plotly.react("lapChart", traces(participants, x, "laps", "time"), {
     ...commonLayout,
-    yaxis: { ...commonLayout.yaxis, title: "Время круга", ...timeTickConfig(participants.flatMap((participant) => participant.laps)) }
+    yaxis: { ...commonLayout.yaxis, title: t("axisLapTime"), ...timeTickConfig(participants.flatMap((participant) => participant.laps)) }
   }, config);
 
   if (officialGroupSelected) {
     clearChartPlaceholder("positionChart");
     Plotly.react("positionChart", traces(participants, x, "positions", "position"), {
       ...commonLayout,
-      yaxis: { ...commonLayout.yaxis, title: "Позиция в зачете", autorange: "reversed", dtick: 1 }
+      yaxis: { ...commonLayout.yaxis, title: t("axisPosition"), autorange: "reversed", dtick: 1 }
     }, config);
   } else {
-    renderEmptyChart("positionChart", "Выберите зачет, чтобы увидеть позиции");
+    renderEmptyChart("positionChart", t("chartsEmptyGroup"));
   }
 }
 
@@ -772,23 +853,23 @@ function renderChartScope(participants) {
   const favoriteCount = getFilteredParticipants().filter((participant) => state.favorites.has(participant.id)).length;
 
   if (!state.participants.length) {
-    els.chartScope.textContent = "Графики появятся после загрузки CSV.";
+    els.chartScope.textContent = t("scopeNoData");
     return;
   }
 
   if (!isCourseComparable()) {
-    els.chartScope.textContent = "Графики скрыты: выберите одну трассу.";
+    els.chartScope.textContent = t("scopeCourse");
     return;
   }
 
   if (state.favorites.size) {
     els.chartScope.innerHTML = favoriteCount
-      ? `<strong>Сравнение</strong><span>На графиках только отмеченные участники (${participants.length}). Звездочка в таблице добавляет или убирает линию.</span>`
-      : `<strong>Сравнение</strong><span>На графиках нет линий: отмеченные участники не попали в текущий фильтр.</span>`;
+      ? `<strong>${t("scopeComparison")}</strong><span>${t("scopeFavorites", { count: participants.length })}</span>`
+      : `<strong>${t("scopeComparison")}</strong><span>${t("scopeFavoritesFiltered")}</span>`;
     return;
   }
 
-  els.chartScope.innerHTML = `<strong>Обзор</strong><span>На графиках топ-${Math.min(CHART_DEFAULT_LIMIT, participants.length)} по месту в текущей выборке. Отметьте участников звездой, чтобы перейти к сравнению.</span>`;
+  els.chartScope.innerHTML = `<strong>${t("scopeOverview")}</strong><span>${t("scopeTop", { count: Math.min(CHART_DEFAULT_LIMIT, participants.length) })}</span>`;
 }
 
 function renderComparisonPanel() {
@@ -806,8 +887,8 @@ function renderComparisonPanel() {
     els.comparisonPanel.innerHTML = `
       <header class="comparison-header">
         <div>
-          <h2>Сравнение выбранных</h2>
-          <p>Выберите одну трассу, чтобы сравнить отмеченных участников по времени.</p>
+          <h2>${t("cmpSelectedTitle")}</h2>
+          <p>${t("cmpSelectCourse")}</p>
         </div>
       </header>
     `;
@@ -824,14 +905,14 @@ function renderComparisonPanel() {
     <header class="comparison-header">
       <div>
         <h2>${escapeHtml(table.title)}</h2>
-        <p>${escapeHtml(table.note)}${showContext ? " Сравнение по трассе, без учета зачета." : ""}</p>
+        <p>${escapeHtml(table.note)}${showContext ? ` ${t("cmpMixedNote")}` : ""}</p>
       </div>
     </header>
     <div class="comparison-table-wrap">
       <table class="comparison-table">
         <thead>
           <tr>
-            <th>Участник</th>
+            <th>${t("cmpParticipant")}</th>
             ${headers}
           </tr>
         </thead>
@@ -860,8 +941,8 @@ function comparisonTableForActiveChart(participants) {
   if (state.activeChart === "lapChart") {
     const leaders = state.laps.map((_, index) => minNumber(participants.map((participant) => participant.laps[index])));
     return {
-      title: "Таблица: круги",
-      note: "Разница к лучшему кругу среди выбранных на каждом круге.",
+      title: t("cmpLapsTitle"),
+      note: t("cmpLapsNote"),
       values: (participant) => participant.laps.map((time, index) => compareTime(time, leaders[index])),
       format: formatComparisonDelta,
       className: comparisonClass
@@ -870,8 +951,8 @@ function comparisonTableForActiveChart(participants) {
 
   if (state.activeChart === "positionChart") {
     return {
-      title: "Таблица: позиция",
-      note: "Те же позиции по отметкам, что на графике.",
+      title: t("cmpPositionTitle"),
+      note: t("cmpPositionNote"),
       values: (participant) => participant.positions,
       format: formatPosition,
       className: () => "is-even"
@@ -880,8 +961,8 @@ function comparisonTableForActiveChart(participants) {
 
   const leaders = state.laps.map((_, index) => minNumber(participants.map((participant) => participant.cumulative[index])));
   return {
-    title: "Таблица: суммарное время",
-    note: "Нарастание разницы к лучшему из выбранных на каждой отметке.",
+    title: t("cmpCumulativeTitle"),
+    note: t("cmpCumulativeNote"),
     values: (participant) => participant.cumulative.map((time, index) => compareTime(time, leaders[index])),
     format: formatComparisonDelta,
     className: comparisonClass
@@ -992,7 +1073,7 @@ function updateChartTabs(officialGroupSelected) {
     tab.classList.toggle("is-disabled", locked);
     tab.setAttribute("aria-disabled", String(locked));
     if (locked) {
-      tab.dataset.hint = "Покажет, как менялась позиция в зачёте по кругам. Доступно для одного зачёта — выберите его в фильтре «Зачёт».";
+      tab.dataset.hint = t("tabPositionHint");
     } else {
       delete tab.dataset.hint;
       if (tabHintEl && tabHintEl.dataset.for === tab.dataset.chart) hideTabHint();
@@ -1118,7 +1199,7 @@ function groupLabels() {
 
 function renderEventOptions() {
   if (!state.participants.length) {
-    els.eventSelect.innerHTML = `<option value="all">Нет данных</option>`;
+    els.eventSelect.innerHTML = `<option value="all">${t("optNoData")}</option>`;
     els.eventSelect.value = "all";
     return;
   }
@@ -1139,7 +1220,7 @@ function renderEventOptions() {
   if (!eventExists) state.event = "all";
 
   els.eventSelect.innerHTML = [
-    `<option value="all">Все соревнования</option>`,
+    `<option value="all">${t("optAllEvents")}</option>`,
     ...events.map(([key, label]) => `<option value="${escapeHtml(key)}">${escapeHtml(label)}</option>`)
   ].join("");
   els.eventSelect.value = state.event;
@@ -1147,7 +1228,7 @@ function renderEventOptions() {
 
 function renderCourseOptions() {
   if (!state.participants.length) {
-    els.courseSelect.innerHTML = `<option value="all">Нет данных</option>`;
+    els.courseSelect.innerHTML = `<option value="all">${t("optNoData")}</option>`;
     els.courseSelect.value = "all";
     return;
   }
@@ -1167,7 +1248,7 @@ function renderCourseOptions() {
   if (!courseExists) state.course = "all";
 
   els.courseSelect.innerHTML = [
-    `<option value="all">Все трассы</option>`,
+    `<option value="all">${t("optAllCourses")}</option>`,
     ...courses.map(([key, label]) => `<option value="${escapeHtml(key)}">${escapeHtml(label)}</option>`)
   ].join("");
   els.courseSelect.value = state.course;
@@ -1175,7 +1256,7 @@ function renderCourseOptions() {
 
 function renderGroupOptions() {
   if (!state.participants.length) {
-    els.groupSelect.innerHTML = `<option value="all">Нет данных</option>`;
+    els.groupSelect.innerHTML = `<option value="all">${t("optNoData")}</option>`;
     els.groupSelect.value = "all";
     return;
   }
@@ -1188,7 +1269,7 @@ function renderGroupOptions() {
   if (!groupExists) state.group = "all";
 
   els.groupSelect.innerHTML = [
-    `<option value="all">Все зачеты</option>`,
+    `<option value="all">${t("optAllGroups")}</option>`,
     ...groups.map(([key, label]) => `<option value="${escapeHtml(key)}">${escapeHtml(label)}</option>`)
   ].join("");
   els.groupSelect.value = state.group;
@@ -1210,6 +1291,9 @@ function compareSortValue(a, b, key) {
   if (key.startsWith("lap-")) {
     const index = Number(key.split("-")[1]);
     return compareValues(a.laps[index], b.laps[index]);
+  }
+  if (key === "gender") {
+    return compareValues(formatGender(a), formatGender(b));
   }
   if (key === "total") {
     return compareValues(isOfficialFinisher(a) ? a.total : null, isOfficialFinisher(b) ? b.total : null);
@@ -1241,35 +1325,31 @@ function getTrend(participant) {
     const finishDelta = last - first;
     const finishDeltaRatio = finishDelta / first;
     if (Math.abs(finishDeltaRatio) <= 0.02) {
-      notes.push(official ? "Финишировал в темпе первого круга." : "Отмеченные круги прошел в ровном темпе.");
+      notes.push(t(official ? "trendEvenOfficial" : "trendEvenPartial"));
     } else if (finishDeltaRatio < 0) {
-      notes.push(official
-        ? `Ускорился к финишу: последний круг быстрее первого на ${formatTime(Math.abs(finishDelta))}.`
-        : `Последний отмеченный круг быстрее первого на ${formatTime(Math.abs(finishDelta))}.`);
+      notes.push(t(official ? "trendFasterOfficial" : "trendFasterPartial", { delta: formatTime(Math.abs(finishDelta)) }));
     } else {
-      notes.push(official
-        ? `Темп к концу снизился: последний круг медленнее первого на ${formatTime(finishDelta)}.`
-        : `Темп на последнем отмеченном круге снизился: он медленнее первого на ${formatTime(finishDelta)}.`);
+      notes.push(t(official ? "trendSlowerOfficial" : "trendSlowerPartial", { delta: formatTime(finishDelta) }));
     }
   }
 
   if (spreadValue != null && best != null && best > 0) {
     const spreadRatio = spreadValue / best;
     if (spreadRatio <= 0.03) {
-      notes.push("Круги прошел очень ровно.");
+      notes.push(t("trendVeryEven"));
     } else if (spreadRatio <= 0.07) {
-      notes.push("Темп был достаточно ровный.");
+      notes.push(t("trendEven"));
     } else {
-      notes.push("Темп был нестабильным.");
+      notes.push(t("trendUneven"));
     }
   }
 
   const outlier = getSlowLapOutlier(participant);
   if (outlier) {
-    notes.push(`Самый долгий круг - ${outlier.label}.`);
+    notes.push(t("trendSlowestLap", { lap: outlier.label }));
   }
 
-  return notes.join(" ") || "Пока мало данных, чтобы оценить темп по кругам.";
+  return notes.join(" ") || t("trendNoData");
 }
 
 function getSlowLapOutlier(participant) {
@@ -1286,7 +1366,7 @@ function getSlowLapOutlier(participant) {
   if (!baseline || (slowest.lap - baseline) / baseline < 0.07) return null;
 
   return {
-    label: state.laps[slowest.index] ?? `Круг ${slowest.index + 1}`,
+    label: state.laps[slowest.index] ?? String(slowest.index + 1),
     time: slowest.lap
   };
 }
@@ -1297,7 +1377,7 @@ function formatTime(value) {
   const absolute = Math.abs(value);
   let minutes = Math.floor(absolute / 60);
   const raw = absolute - minutes * 60;
-  // toFixed может округлить 59.96 до "60.0" — переносим в минуты
+  // toFixed can round 59.96 up to "60.0" — carry it into minutes
   let seconds = Number(raw.toFixed(raw % 1 ? 1 : 0));
   if (seconds >= 60) {
     minutes += 1;
@@ -1351,23 +1431,15 @@ function showCsvIssues(issues) {
   const extra = issues.length - shown.length;
   const list = shown.map((issue) => `<li>${escapeHtml(issue)}</li>`).join("");
   const more = extra > 0
-    ? `<p class="notice-more">...и еще ${extra} ${pluralRu(extra, "строка", "строки", "строк")}.</p>`
+    ? `<p class="notice-more">${t("noticeMore", { count: extra })}</p>`
     : "";
 
   els.notice.innerHTML = `
-    <p class="notice-title">Файл не загружен. Проблемных строк: ${issues.length}. Исправьте их и загрузите снова.</p>
+    <p class="notice-title">${t("noticeTitle", { count: issues.length })}</p>
     <ul class="notice-list">${list}</ul>
     ${more}
   `;
   els.notice.classList.remove("is-hidden", "is-loading");
-}
-
-function pluralRu(n, one, few, many) {
-  const mod10 = n % 10;
-  const mod100 = n % 100;
-  if (mod10 === 1 && mod100 !== 11) return one;
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return few;
-  return many;
 }
 
 function sanitizeTraceName(value) {

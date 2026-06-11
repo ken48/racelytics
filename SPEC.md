@@ -1,69 +1,70 @@
 # Racelytics Project Spec
 
-Этот файл нужен для разработки и ревью, особенно если потерян контекст предыдущих обсуждений. `README.md` описывает использование приложения, а этот документ фиксирует архитектурные решения, модель данных, ожидаемое поведение и проверочные сценарии.
+This file exists for development and review, especially when the context of previous discussions is lost. `README.md` describes how to use the application, while this document captures architectural decisions, the data model, expected behavior, and verification scenarios.
 
-## Цель
+## Goal
 
-Racelytics — легкий статический дашборд для анализа результатов гонок по кругам.
+Racelytics is a lightweight static dashboard for analyzing lap-based race results.
 
-Принципы:
+Principles:
 
-- без backend, аккаунтов, базы данных и истории;
-- одна статическая HTML-страница, пригодная для GitHub Pages;
-- данные приходят из CSV по прямой ссылке или через локальный выбор файла;
-- Google Sheets может быть удобным источником CSV через опубликованную CSV-ссылку;
-- приложение должно быть понятно людям, которые не программируют.
+- no backend, accounts, database, or history;
+- a single static HTML page suitable for GitHub Pages;
+- data comes from a CSV via a direct link or a local file picker;
+- Google Sheets can be a convenient CSV source via a published CSV link;
+- the application must be understandable to people who don't program.
 
-## Технологии
+## Technology
 
-- `index.html` — разметка статической страницы;
-- `styles.css` — весь UI;
-- `app.js` — парсинг CSV, нормализация данных, фильтры, таблица, карточка участника, графики;
-- Plotly через CDN — графики;
-- `results.csv` — демонстрационные/тестовые данные, не обязательная часть runtime.
+- `index.html` — static page markup;
+- `styles.css` — the entire UI;
+- `app.js` — CSV parsing, data normalization, filters, table, participant card, charts;
+- `racelytics.lang.js` — UI string dictionaries (locales), loaded before `app.js`;
+- Plotly via CDN — charts;
+- `results.csv` — demo/test data, not a required part of the runtime.
 
-Backend не добавлять без отдельного решения. Для новых зависимостей нужен явный выигрыш: сейчас проект намеренно vanilla JS.
+Do not add a backend without an explicit decision. New dependencies need a clear payoff: the project is intentionally vanilla JS.
 
-## Загрузка данных
+## Data Loading
 
-Поддерживаются два способа:
+Two ways are supported:
 
-- URL из `?src=` или поля `Ссылка на CSV-файл`;
-- локальный CSV через `<input type="file">`.
+- a URL from `?src=` or the `CSV file link` field;
+- a local CSV via `<input type="file">`.
 
-URL грузится прямым `fetch(src)`. Спец-обработки Яндекс.Диска, Google Drive API и других провайдеров нет и не должно быть по умолчанию. Для Google Sheets ожидается готовая CSV-ссылка вида `.../pub?...&output=csv` или `.../export?format=csv&gid=...`.
+URLs are loaded with a direct `fetch(src)`. There is no special handling for Yandex.Disk, the Google Drive API, or other providers, and there must not be by default. For Google Sheets, a ready-made CSV link is expected, like `.../pub?...&output=csv` or `.../export?format=csv&gid=...`.
 
-Локальный файл читается в браузере через `file.text()`, никуда не отправляется и работает также на GitHub Pages.
+A local file is read in the browser via `file.text()`, is never sent anywhere, and also works on GitHub Pages.
 
-На время загрузки интерфейс переходит в состояние «занят» (`setBusy`): кнопка загрузки и выбор файла блокируются, контент с данными приглушается и не реагирует на клики, чтобы пользователь не работал по устаревшим данным. Переход приглушения отложен на ~200 мс, поэтому быстрые загрузки не мигают. Параллельные загрузки защищены счетчиком `activeLoadSeq`: применяется только результат последней начатой загрузки, устаревший ответ (даже если пришел позже) отбрасывается и не затирает свежие данные.
+While loading, the interface enters a "busy" state (`setBusy`): the load button and file picker are disabled, and data content is dimmed and ignores clicks so the user doesn't work with stale data. The dimming transition is delayed by ~200 ms, so fast loads don't flicker. Parallel loads are guarded by the `activeLoadSeq` counter: only the result of the most recently started load is applied; a stale response (even if it arrives later) is discarded and does not overwrite fresh data.
 
-## CSV Модель
+## CSV Model
 
-Основные колонки:
+Core columns:
 
 ```csv
 event,place,bib,name,gender,group,course,lap1,lap2,lap3...
 ```
 
-Смысл:
+Meaning:
 
-- `event` — конкретное соревнование, дата, старт или протокол;
-- `place` — место внутри зачета этого соревнования: положительное целое число либо фиксированный статус незавершения `DNF`/`DNS`/`DSQ`;
-- `bib` — номер участника в конкретном событии;
-- `name` — имя участника;
-- `gender` — атрибут участника, не зачет сам по себе;
-- `group` — зачет, внутри которого считаются места, финишное отставание и позиция;
-- `course` — трасса/формат дистанции для аналитического сравнения;
-- `lap1...lapN` — кумулятивные отметки времени на конце круга.
+- `event` — a specific competition, date, start, or protocol;
+- `place` — the place within the group of that event: a positive integer or a fixed non-finish status `DNF`/`DNS`/`DSQ`;
+- `bib` — the participant's number in a specific event;
+- `name` — the participant's name;
+- `gender` — an attribute of the participant, not a scoring group by itself;
+- `group` — the scoring group within which places, finish gaps, and positions are calculated;
+- `course` — the course/distance format for analytical comparison;
+- `lap1...lapN` — cumulative time splits at the end of each lap.
 
-`lap1...lapN` не являются временем круга. Пример:
+`lap1...lapN` are not lap durations. Example:
 
 ```csv
 lap1,lap2,lap3
 3:07,6:17,9:24
 ```
 
-Внутри приложения это превращается в круги:
+Inside the application this becomes laps:
 
 ```text
 1: 3:07
@@ -71,203 +72,219 @@ lap1,lap2,lap3
 3: 3:07
 ```
 
-Формат времени в CSV: `[HH:]MM:SS`. Секунды без двоеточия намеренно не поддерживаются, чтобы не смешивать старый и новый формат.
+Time format in the CSV: `[HH:]MM:SS`. Seconds without a colon are intentionally unsupported to avoid mixing old and new formats.
 
-## Ключи Совместимости
+## Compatibility Keys
 
-Важное разделение:
+An important separation:
 
-- `group` определяет официальный зачет;
-- `course` определяет совместимость трассы для аналитики;
-- `event` разделяет разные соревнования/годы.
+- `group` defines the official scoring;
+- `course` defines course compatibility for analytics;
+- `event` separates different competitions/years.
 
-Официальный ключ результата:
+The official result key:
 
 ```text
 event + course + group
 ```
 
-Это значит:
+This means:
 
-- результаты разных годов можно держать в одном CSV;
-- если трасса одна и та же, `course` должен быть одинаковым;
-- официальные места, финишные отставания и позиции не смешиваются между разными `event`;
-- графики времени/кругов могут сравнивать несколько `event` на одной трассе.
+- results from different years can live in one CSV;
+- if the course is the same, `course` must be identical;
+- official places, finish gaps, and positions are never mixed across different `event`s;
+- time/lap charts may compare several `event`s on the same course.
 
-Не добавлять год в `group`, если есть `event`. Правильно:
+Do not put the year into `group` when `event` exists. Correct:
 
 ```csv
 event=2026-06-07, group=М 7.2 км
 event=2025-06-08, group=М 7.2 км
 ```
 
-Нежелательно:
+Undesirable:
 
 ```csv
 group=М 7.2 км 2026
 group=М 7.2 км 2025
 ```
 
-## Строгий Формат CSV
+## Strict CSV Format
 
-Обратная совместимость со старыми CSV сейчас не предполагается. Не добавлять неявные подстановки значений без отдельного решения.
+Backward compatibility with older CSVs is currently not a goal. Do not add implicit value substitutions without an explicit decision.
 
-Обязательные колонки:
+Required columns:
 
 ```text
 event, place, bib, name, gender, group, course
 ```
 
-Также нужна хотя бы одна колонка `lapN`.
+At least one `lapN` column is also required. Lap columns must be sequential without gaps or duplicates (`lap1, lap2, lap3...`); anything else is a top-level error rather than a silently accepted ordering.
 
-Если обязательной колонки нет или в строке пустое обязательное значение, приложение должно показать ошибку. Это лучше, чем молча угадывать зачет или трассу и строить некорректную аналитику.
+If a required column is missing or a row has an empty required value, the application must show an error. That is better than silently guessing the group or course and producing incorrect analytics.
 
-Ошибки строк собираются за один проход и показываются списком, а не по одной: `normalizeRows` валидирует все строки, копит сообщения и бросает ошибку с полем `issues`, а `showCsvIssues` рисует их списком с номерами строк. Так пользователь видит все проблемы сразу и правит файл за один заход. Отсутствие обязательных колонок — отдельная ошибка верхнего уровня (без `issues`), потому что без колонок построчная проверка бессмысленна.
+Row errors are collected in a single pass and shown as a list, not one by one: `normalizeRows` validates all rows, accumulates messages, and throws an error with an `issues` field, while `showCsvIssues` renders them as a list with row numbers. The user sees all problems at once and can fix the file in one go. Missing required columns are a separate top-level error (without `issues`), because per-row validation is pointless without the columns.
 
-`place` принимает положительное целое число или фиксированный статус незавершения (`DNF`, `DNS`, `DSQ` без учета регистра — `normalizePlace`). Статусы — валидные данные: участник показывается, его место выводится как статус, а в сортировке он идет после всех с числовым местом (`place` хранится как `null`). Статусные записи не участвуют в официальных расчетах финишного отставания и позиции, даже если у них есть промежуточные отметки. Любое другое значение — ошибка, а не молчаливая подстановка. Набор статусов намеренно закрытый и без локальных синонимов, чтобы опечатка в `place` не прошла как «статус».
+`place` accepts a positive integer or a fixed non-finish status (`DNF`, `DNS`, `DSQ`, case-insensitive — `normalizePlace`). Statuses are valid data: the participant is displayed, their place renders as the status, and in sorting they go after everyone with a numeric place (`place` is stored as `null`). Status records do not participate in official finish-gap and position calculations, even if they have intermediate splits. Any other value is an error, not a silent substitution. The status set is intentionally closed and without local synonyms, so a typo in `place` cannot pass as a "status".
 
-## UI Поведение
+## UI Behavior
 
-Верхняя зона:
+Top area:
 
-- бренд;
-- поле прямой CSV-ссылки;
-- компактный выбор локального файла.
+- brand;
+- direct CSV link field;
+- compact local file picker;
+- language switcher (`RU`/`EN`).
 
-Не показывать техническую сводку с исходной ссылкой на файл в шапке. Длинные Google Sheets URL выглядят как мусор и съедают первый экран.
+Do not show a technical summary with the source file link in the header. Long Google Sheets URLs look like garbage and eat the first screen.
 
-Фильтры:
+Filters:
 
-- свободный поиск по `bib` или `name`;
-- фиксированные селекты `Соревнование`, `Трасса`, `Зачет`;
-- метрики `Участники` и `Круги`.
+- free search by `bib` or `name`;
+- fixed selects `Event`, `Course`, `Group`;
+- `Participants` and `Laps` metrics.
 
-Если в данных только один `event` или `course`, селект может показывать единственный вариант без общего `Все...`.
+If the data contains only one `event` or `course`, the select may show that single option without the generic `All...`.
 
-Таблица:
+Table:
 
-- сортируемая;
-- первая колонка `График` со звездочкой;
-- звездочка в таблице управляет участниками на графиках;
-- если звездочек нет, графики показывают топ-10 по текущей сортировке;
-- если звездочки есть, графики показывают только избранных в текущем фильтре.
+- sortable;
+- the first column `Chart` with a star;
+- the star in the table controls which participants appear on the charts;
+- with no stars, charts show the top 10 by place;
+- with stars, charts show only the starred participants within the current filter.
 
-Карточка участника:
+Participant card:
 
-- параметры записи показываются в столбик, не одной строкой через разделители;
-- основные показатели: `Место`, `Финиш` или `Последняя отметка` для статусных записей, `Отставание`, `Лучший круг`, `Разброс кругов`;
-- ниже — короткая эвристическая фраза о темпе.
+- record attributes are shown as a column, not as one line with separators;
+- key stats: `Place`, `Finish` (or `Last split` for status records), `Gap`, `Best lap`, `Lap spread`;
+- below — a short heuristic phrase about pace.
 
-## Графики
+## Charts
 
-Графики строятся только если выбранная область совместима по `course`.
+Charts are built only when the selected scope is compatible by `course`.
 
-Вкладки:
+Tabs:
 
-- `Суммарное время` — кумулятивные отметки;
-- `Круги` — рассчитанные времена кругов;
-- `Позиция` — позиция по кругам.
+- `Total time` — cumulative splits;
+- `Laps` — computed lap times;
+- `Position` — position per lap.
 
-Если выбраны все зачеты, графики суммарного времени и кругов допустимы как аналитика трассы. `Позиция` показывается только в контексте официального зачета, потому что позиция считается внутри `event + course + group`.
+If all groups are selected, the total time and lap charts are allowed as course analytics. `Position` is shown only in the context of an official group, because position is computed within `event + course + group`.
 
-Режимы отображения:
+Display modes:
 
-- без звездочек — `Обзор`: графики показывают стабильный топ-10 по месту в текущей выборке, независимо от сортировки таблицы;
-- со звездочками — `Сравнение`: графики показывают только отмеченных участников.
+- without stars — `Overview`: charts show a stable top 10 by place in the current selection, independent of table sorting;
+- with stars — `Comparison`: charts show only the starred participants.
 
-Ось/заголовки кругов короткие: `1`, `2`, `3`, а не `Круг 1`.
+Lap axis labels and headers are short: `1`, `2`, `3`, not `Lap 1`.
 
-## Таблица Активного Графика
+## Active Chart Table
 
-Если в текущем фильтре звездой отмечены 2+ участника, приложение показывает под графиком таблицу с данными активной вкладки.
+If 2+ participants are starred within the current filter, the application shows a table with the active tab's data under the chart.
 
-Правила:
+Rules:
 
-- сравнение доступно только внутри одной `course`;
-- разные `event` и `group` можно сравнивать, потому что это аналитика по трассе, а не официальный зачет;
-- `Суммарное время` — кумулятивная разница к лучшему из выбранных по каждой отметке: `+0:12` означает, что участник был медленнее лучшего на этой отметке на 12 секунд, `0:00` — лучший на этой отметке;
-- `Круги` — разница к лучшему кругу среди выбранных на каждом круге;
-- `Позиция` — позиции по отметкам, те же значения, что на графике;
-- статусные записи (`DNF`, `DNS`, `DSQ`) можно сравнивать по доступным промежуточным отметкам.
+- comparison is available only within a single `course`;
+- different `event`s and `group`s may be compared, because this is course analytics rather than official scoring;
+- `Total time` — cumulative difference to the best of the starred at each split: `+0:12` means the participant was 12 seconds slower than the best at that split, `0:00` — best at that split;
+- `Laps` — difference to the best lap among the starred on each lap;
+- `Position` — per-split positions, the same values as on the chart;
+- status records (`DNF`, `DNS`, `DSQ`) can be compared by their available intermediate splits.
 
-## Эвристики Темпа
+## Pace Heuristics
 
-Эвристики должны быть простыми и не выглядеть как “магия ИИ”. Проценты считаются внутри, но в UI не выводятся.
+Heuristics must be simple and must not look like "AI magic". Percentages are computed internally but never shown in the UI.
 
-Используемые значения:
+Values used:
 
-- `firstLap` — первый валидный круг;
-- `lastLap` — последний валидный круг;
-- `bestLap` — лучший круг;
-- `worstLap` — худший круг;
+- `firstLap` — first valid lap;
+- `lastLap` — last valid lap;
+- `bestLap` — best lap;
+- `worstLap` — worst lap;
 - `lapSpread = worstLap - bestLap`;
-- `finishGap` — финишное отставание до лидера официального зачета; это показатель карточки участника, не отдельный график.
+- `finishGap` — finish gap to the leader of the official group; it is a participant card stat, not a separate chart.
 
-Фраза про финиш:
+Finish phrase (English wording; Russian equivalents live in `I18N.ru`):
 
-- если последний круг отличается от первого не более чем на 2%: `Финишировал в темпе первого круга.`;
-- если последний быстрее первого больше чем на 2%: `Ускорился к финишу: последний круг быстрее первого на X.`;
-- если последний медленнее первого больше чем на 2%: `Темп к концу снизился: последний круг медленнее первого на X.`;
+- if the last lap differs from the first by no more than 2%: `Finished at first-lap pace.`;
+- if the last lap is more than 2% faster than the first: `Sped up toward the finish: the last lap was X faster than the first.`;
+- if the last lap is more than 2% slower than the first: `Pace dropped toward the end: the last lap was X slower than the first.`;
 
-Фраза про ровность:
+Consistency phrase:
 
-- `lapSpread / bestLap <= 3%`: `Круги прошел очень ровно.`;
-- `<= 7%`: `Темп был достаточно ровный.`;
-- `> 7%`: `Темп был нестабильным.`;
+- `lapSpread / bestLap <= 3%`: `Lap times were very consistent.`;
+- `<= 7%`: `Pace was fairly even.`;
+- `> 7%`: `Pace was inconsistent.`;
 
-Выброс:
+Outlier:
 
-- самый долгий круг сравнивается со средним остальных кругов;
-- если он хуже более чем на 7%, добавляется `Самый долгий круг - N.`;
-- выброс считается только при трех и более валидных кругах.
+- the slowest lap is compared to the average of the other laps;
+- if it is more than 7% worse, `Slowest lap: N.` is added;
+- the outlier is only computed with three or more valid laps.
 
-## Текущие Ограничения
+## Localization
 
-- CSV-парсер простой, но поддерживает кавычки и запятые внутри quoted fields.
-- Нет импорта XLSX.
-- Нет сохранения favorites между загрузками.
-- Нет backend и авторизации.
-- Нет автоматического получения данных из закрытых документов.
-- `?src=` должен указывать на публично доступный CSV или на файл рядом со страницей.
-- При открытии `file://` удаленные CSV могут зависеть от CORS/браузерных ограничений; для проверки лучше использовать локальный HTTP-сервер.
+The interface is bilingual: Russian and English.
 
-## Проверочный Сценарий
+- All UI strings live in the `I18N` dictionary in `racelytics.lang.js` (`ru`, `en`), a plain script loaded before `app.js` (no fetch, so it also works over `file://`). The `t(key, params)` helper in `app.js` substitutes parameters into `{name}` placeholders. A dictionary value may be a function — used for Russian plural forms (`pluralRu` lives in the same file).
+- Adding a language means adding one locale object to `racelytics.lang.js`: the header switcher (`.lang-switch`) is generated by `renderLangSwitch` from the dictionary keys, so no markup changes are needed.
+- Static texts in `index.html` are marked with `data-i18n` (text), `data-i18n-placeholder`, and `data-i18n-aria-label` attributes; `applyTranslations` updates them along with `<html lang>`.
+- The selected language is persisted in `localStorage` under the `racelytics.lang` key; the default comes from `navigator.language` (`ru*` — Russian, otherwise English).
+- CSV error messages are produced in the language active at load time; switching the language does not re-translate an already shown error panel — a deliberate simplification.
+- A participant's gender is stored as a key (`F`/`M`/`null` plus the raw value) and translated at render time (`formatGender`).
+- Code comments are in English. This spec and `README.md` are in English; `CSV_GUIDE.md` is a guide for Russian-speaking protocol makers and stays in Russian.
 
-Минимальная проверка после изменений:
+## Current Limitations
 
-1. `node --check app.js`.
-2. Открыть страницу через локальный сервер, например `http://127.0.0.1:4175/?src=results.csv`.
-3. Убедиться, что таблица загружается.
-4. Проверить фильтры `Соревнование`, `Трасса`, `Зачет`.
-5. В общем режиме по одной трассе проверить, что графики времени/кругов строятся.
-6. Выбрать один зачет и проверить `Позиция`.
-7. Поставить звездочки в таблице и убедиться, что графики показывают только избранных.
-8. Проверить карточку участника: место, финиш, отставание, лучший круг, разброс, фраза темпа.
-9. Проверить мобильный viewport: без горизонтального скролла всей страницы; таблица может скроллиться внутри.
+- The CSV parser is simple but supports quotes and commas inside quoted fields.
+- No XLSX import.
+- Favorites are not preserved across loads.
+- No backend or authorization.
+- No automatic retrieval of data from private documents.
+- `?src=` must point to a publicly accessible CSV or to a file next to the page.
+- When opened via `file://`, remote CSVs may be subject to CORS/browser restrictions; use a local HTTP server for testing.
 
-## Ревью Чеклист
+## Verification Scenario
 
-При ревью изменений смотреть:
+Minimal check after changes:
 
-- не сломалась ли модель `event + course + group`;
-- не смешиваются ли официальные места между разными `event`;
-- не появились ли провайдер-специфичные загрузчики без необходимости;
-- не выводятся ли длинные технические URL в основном UI;
-- корректно ли ведет себя пустое состояние без CSV;
-- не ломается ли загрузка локального файла;
-- не превращаются ли эвристики темпа в слишком уверенные “инсайты”;
-- не ухудшилась ли мобильная раскладка.
+1. Syntax check of `app.js` (e.g. `node --check app.js`).
+2. Open the page via a local server, e.g. `http://127.0.0.1:4175/?src=results.csv`.
+3. Confirm the table loads.
+4. Check the `Event`, `Course`, `Group` filters.
+5. In overview mode on a single course, confirm the time/lap charts render.
+6. Select a single group and check `Position`.
+7. Star participants in the table and confirm the charts show only the starred ones.
+8. Check the participant card: place, finish, gap, best lap, spread, pace phrase.
+9. Switch the language in the header: UI texts change, and the choice survives a page reload.
+10. Check the mobile viewport: no horizontal scrolling of the whole page; the table may scroll internally.
 
-## Основные Места В Коде
+## Review Checklist
 
-- `normalizeRows` — чтение CSV, сбор всех ошибок строк за один проход, расчет позиций и финишного отставания;
-- `buildParticipant` — строгая валидация и нормализация одной строки в участника;
-- `normalizePlace` — разбор `place`: положительное целое число или статус `DNF`/`DNS`/`DSQ`, иначе ошибка;
-- `showCsvIssues` — список всех проблемных строк в плашке ошибки;
-- `computePositionsByGroup`, `computeLeadersByGroup`, `groupParticipants` — официальные позиции и финишные отставания по `scoreKey`;
-- `renderEventOptions`, `renderCourseOptions`, `renderGroupOptions` — фильтры;
-- `renderTable` — таблица и favorites;
-- `renderCard` — карточка участника;
-- `renderComparisonPanel`, `comparisonTableForActiveChart`, `comparisonRow` — табличные данные активного графика для отмеченных участников;
-- `renderCharts`, `withGroupMetrics`, `traces` — Plotly-графики;
-- `getTrend`, `getSlowLapOutlier` — эвристические фразы.
+When reviewing changes, watch for:
+
+- whether the `event + course + group` model is broken;
+- whether official places are mixed across different `event`s;
+- whether provider-specific loaders appeared without need;
+- whether long technical URLs are shown in the main UI;
+- whether the empty state without a CSV behaves correctly;
+- whether local file loading is broken;
+- whether new UI strings are added to both `I18N` locales;
+- whether pace heuristics turn into overconfident "insights";
+- whether the mobile layout regressed.
+
+## Key Code Locations
+
+- `I18N`, `pluralRu` (in `racelytics.lang.js`) — translation dictionaries; `t`, `applyTranslations`, `setLang`, `renderLangSwitch` (in `app.js`) — language switching;
+- `normalizeRows` — CSV reading, single-pass collection of all row errors, position and finish-gap calculation;
+- `buildParticipant` — strict validation and normalization of one row into a participant;
+- `normalizePlace` — `place` parsing: a positive integer or a `DNF`/`DNS`/`DSQ` status, otherwise an error;
+- `showCsvIssues` — the list of all problem rows in the error panel;
+- `computePositionsByGroup`, `computeLeadersByGroup`, `groupParticipants` — official positions and finish gaps by `scoreKey`;
+- `renderEventOptions`, `renderCourseOptions`, `renderGroupOptions` — filters;
+- `renderTable` — table and favorites;
+- `renderCard` — participant card;
+- `renderComparisonPanel`, `comparisonTableForActiveChart`, `comparisonRow` — the active chart's table data for starred participants;
+- `renderCharts`, `withGroupMetrics`, `traces` — Plotly charts;
+- `getTrend`, `getSlowLapOutlier` — heuristic phrases.

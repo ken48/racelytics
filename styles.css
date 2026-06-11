@@ -56,12 +56,37 @@ button {
 
 .topbar {
   display: grid;
-  grid-template-columns: minmax(220px, 0.7fr) minmax(320px, 1.5fr) auto;
+  grid-template-columns: minmax(220px, 0.7fr) minmax(320px, 1.5fr) auto auto;
   gap: 14px;
   align-items: center;
   min-height: 98px;
   padding: 14px;
   border-radius: 8px;
+}
+
+.lang-switch {
+  display: inline-flex;
+  gap: 4px;
+  justify-self: start;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fbfcfa;
+  padding: 3px;
+}
+
+.lang-switch button {
+  min-height: 30px;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+  padding: 0 10px;
+}
+
+.lang-switch button.is-active {
+  background: var(--track);
+  color: #fff;
 }
 
 .brand {
@@ -246,7 +271,7 @@ body.is-busy .layout {
   pointer-events: none;
 }
 
-/* Plotly выставляет pointer-events: all на своих слоях, перебиваем принудительно */
+/* Plotly sets pointer-events: all on its own layers, so force-override it */
 body.is-busy .charts,
 body.is-busy .charts * {
   pointer-events: none !important;

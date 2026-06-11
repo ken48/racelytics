@@ -1,52 +1,54 @@
 # Racelytics
 
-Легкий статический CSV-дашборд для анализа кругов и темпа.
+A lightweight static CSV dashboard for lap and pace analysis.
 
-## Использование
+## Usage
 
-Откройте `index.html` напрямую или раздайте папку любым статическим сервером.
+Open `index.html` directly or serve the folder with any static server.
 
-Данные можно загрузить так:
+Data can be loaded in these ways:
 
 - `?src=https://example.com/results.csv`
-- поле `Ссылка на CSV-файл`
-- локальная загрузка файла
+- the `CSV file link` field
+- local file upload
+
+The interface language (Russian/English) is switched with the `RU`/`EN` buttons in the header; the choice is remembered by the browser.
 
 ## Google Sheets
 
-> Готовите данные и не программируете? Смотрите пошаговую инструкцию для составителей протоколов: [CSV_GUIDE.md](CSV_GUIDE.md) — с упором на Google Таблицы.
+> Preparing data without being a programmer? See the step-by-step guide for protocol makers (in Russian): [CSV_GUIDE.md](CSV_GUIDE.md) — focused on Google Sheets.
 
-Удобный вариант для живого протокола — вести таблицу в Google Sheets и передавать в Racelytics ссылку на CSV-выгрузку.
+A convenient option for a live protocol is to keep the table in Google Sheets and give Racelytics the link to its CSV export.
 
-Самый надежный способ:
+The most reliable way:
 
-1. Создайте таблицу с нужными колонками.
-2. Откройте `Файл` → `Поделиться` → `Опубликовать в интернете`.
-3. Выберите нужный лист.
-4. Формат публикации: `CSV`.
-5. Скопируйте опубликованную ссылку и вставьте ее в поле `Ссылка на CSV-файл`.
+1. Create a sheet with the required columns.
+2. Open `File` → `Share` → `Publish to web`.
+3. Pick the sheet you need.
+4. Publish format: `CSV`.
+5. Copy the published link and paste it into the `CSV file link` field.
 
-Обычно ссылка выглядит примерно так:
+The link usually looks something like this:
 
 ```text
 https://docs.google.com/spreadsheets/d/e/2PACX-.../pub?gid=0&single=true&output=csv
 ```
 
-Эту же ссылку можно передать через `?src=`:
+The same link can be passed via `?src=`:
 
 ```text
 https://your-site.example/racelytics/?src=https%3A%2F%2Fdocs.google.com%2Fspreadsheets%2Fd%2Fe%2F2PACX-...%2Fpub%3Fgid%3D0%26single%3Dtrue%26output%3Dcsv
 ```
 
-Если таблица просто открыта по ссылке, иногда работает и короткая export-ссылка:
+If the sheet is simply shared by link, the short export link sometimes works too:
 
 ```text
 https://docs.google.com/spreadsheets/d/SPREADSHEET_ID/export?format=csv&gid=0
 ```
 
-Но для публичного дашборда лучше использовать вариант `Опубликовать в интернете`: он не требует аккаунта у зрителя и стабильнее работает как удаленный CSV.
+For a public dashboard, prefer the `Publish to web` option: it doesn't require viewers to have an account and is more reliable as a remote CSV.
 
-Ожидаемые колонки:
+Expected columns:
 
 ```csv
 event,place,bib,name,gender,group,course,lap1,lap2,lap3,lap4
@@ -55,25 +57,25 @@ event,place,bib,name,gender,group,course,lap1,lap2,lap3,lap4
 2026-06-07,1,217,Luca Rossi,М,М 4 круга,Лыжероллерный круг 1.2 км,4:10,8:26,12:39,16:58
 ```
 
-`event` — это конкретное соревнование, дата или протокол. Например `2026-06-07`, `Контрольная тренировка 2026`, `Кубок клуба 2025`. Место, финишное отставание и позиция считаются отдельно внутри `event + course + group`. Также поддерживаются алиасы колонок: `race`, `competition`, `date`, `соревнование`, `гонка`, `старт`, `дата`, `протокол`.
+`event` is a specific competition, date, or protocol. For example `2026-06-07`, `Control training 2026`, `Club cup 2025`. Place, finish gap, and position are computed separately within `event + course + group`. Column aliases are also supported: `race`, `competition`, `date`, `соревнование`, `гонка`, `старт`, `дата`, `протокол`.
 
-`gender` — это атрибут участника. Можно передавать `M/F`, `male/female`, `м/ж`, `мужчины/женщины`.
+`gender` is an attribute of the participant. You can pass `M/F`, `male/female`, `м/ж`, `мужчины/женщины`.
 
-`group` — это зачет результата: например `Ж`, `М`, `U18`, `Open`. Не добавляйте год в название зачета, для этого есть `event`. Также поддерживаются алиасы колонок: `group_id`, `category`, `division`, `class`, `wave`, `зачет`, `группа`, `класс`, `категория`.
+`group` is the result scoring group: for example `Ж`, `М`, `U18`, `Open`. Don't put the year into the group name — that's what `event` is for. Column aliases are also supported: `group_id`, `category`, `division`, `class`, `wave`, `зачет`, `группа`, `класс`, `категория`.
 
-`course` — это совместимость трассы/дистанции для графиков: например `Лыжероллерный круг 1.2 км`, `A loop`, `B loop`. Участников с разным `course` нельзя корректно рисовать вместе на одном графике. Если трасса одна и та же в разные годы, оставляйте одинаковый `course`: приложение сможет сравнить темп по трассе, но официальные места останутся разделены по `event`. Также поддерживаются алиасы: `course_id`, `track`, `route`, `distance`, `трасса`, `дистанция`, `маршрут`.
+`course` defines course/distance compatibility for charts: for example `Лыжероллерный круг 1.2 км`, `A loop`, `B loop`. Participants with different `course` values cannot be drawn together on one chart correctly. If the course is the same across years, keep the same `course`: the application can then compare pace on the course while official places stay separated by `event`. Aliases are also supported: `course_id`, `track`, `route`, `distance`, `трасса`, `дистанция`, `маршрут`.
 
-Колонки `event`, `place`, `bib`, `name`, `gender`, `group`, `course` обязательны. Если одна из них отсутствует или в строке пустое значение, файл считается некорректным.
+The columns `event`, `place`, `bib`, `name`, `gender`, `group`, `course` are required. If one of them is missing or a row has an empty value, the file is considered invalid.
 
-`place` — это положительное целое число (место в зачете) или фиксированный статус незавершения: `DNF`, `DNS`, `DSQ` (регистр не важен). Участники со статусом показываются в таблице и сортируются после всех, кто имеет числовое место. Они не влияют на официальные позиции в зачете. Любое другое значение в `place` считается ошибкой, а не угадывается.
+`place` is a positive integer (place within the group) or a fixed non-finish status: `DNF`, `DNS`, `DSQ` (case-insensitive). Participants with a status are shown in the table and sorted after everyone with a numeric place. They do not affect official positions in the group. Any other value in `place` is treated as an error, not guessed.
 
-UI-правила:
+UI rules:
 
-- `Все трассы`: таблица и сводка, графики скрыты.
-- Одна `course`, все соревнования и все зачеты: без звездочек графики работают в режиме `Обзор` и показывают стабильный топ-10 по месту в текущей выборке.
-- Одна `course` и один `group`: доступна позиция, рассчитанная отдельно внутри каждого `event`.
-- Если звездой отмечен хотя бы один участник, графики переходят в режим `Сравнение` и показывают только отмеченных. При 2+ участниках под активным графиком появляется таблица сравнения: для суммарного времени — разница к лучшему из выбранных на каждой отметке, для кругов — разница к лучшему выбранному на каждом круге, для позиции — соответствующие ряды графика.
+- `All courses`: table and summary only, charts are hidden.
+- One `course`, all events and all groups: without stars, charts work in `Overview` mode and show a stable top 10 by place in the current selection.
+- One `course` and one `group`: position is available, computed separately within each `event`.
+- If at least one participant is starred, charts switch to `Comparison` mode and show only the starred ones. With 2+ participants, a comparison table appears under the active chart: for total time — the difference to the best of the starred at each split, for laps — the difference to the best starred lap on each lap, for position — the same series as on the chart.
 
-Колонки `lap1`, `lap2`, `lap3` и так далее содержат кумулятивные отметки времени на конце круга, а не длительность круга. Например `lap2=8:19` означает, что участник прошел два круга за 8 минут 19 секунд. Приложение само считает длительность каждого круга как разницу между соседними отметками.
+The columns `lap1`, `lap2`, `lap3` and so on contain cumulative time splits at the end of each lap, not lap durations. For example `lap2=8:19` means the participant completed two laps in 8 minutes 19 seconds. The application computes each lap duration as the difference between adjacent splits.
 
-Формат времени в CSV: `[HH:]MM:SS`, например `4:12`, `18:56`, `1:02:03`. Секунды без двоеточия не используются.
+Time format in the CSV: `[HH:]MM:SS`, for example `4:12`, `18:56`, `1:02:03`. Seconds without a colon are not supported.
