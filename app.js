@@ -63,6 +63,8 @@ function bindEvents() {
 
   els.fileInput.addEventListener("change", async (event) => {
     const [file] = event.target.files;
+    // Сбрасываем value, иначе повторный выбор того же файла не вызовет change
+    event.target.value = "";
     if (file) {
       els.fileName.textContent = file.name;
       await loadFromFile(file);
@@ -123,7 +125,6 @@ async function loadFromUrl(src) {
     if (seq !== activeLoadSeq) return;
     if (!loadCsv(text)) return;
     setNotice("");
-    els.fileInput.value = "";
     els.fileName.textContent = "Выбрать CSV";
     const url = new URL(window.location.href);
     url.searchParams.set("src", src);
@@ -233,8 +234,12 @@ function normalizeRows(rows) {
   const headers = Object.keys(rows[0] ?? {});
   const lowerMap = new Map(headers.map((header) => [header.toLowerCase(), header]));
 
-  const lapHeaders = headers.filter((header) => /^lap\d*$/i.test(header.trim()));
+  const lapHeaders = headers.filter((header) => /^lap\d+$/i.test(header.trim()));
   if (!lapHeaders.length) throw new Error("В CSV должны быть колонки кругов: lap1, lap2, lap3 и так далее.");
+  const lapNumbers = lapHeaders.map((header) => Number(header.trim().match(/\d+/)[0]));
+  if (!lapNumbers.every((number, index) => number === index + 1)) {
+    throw new Error("Колонки кругов должны идти по порядку без пропусков и дубликатов: lap1, lap2, lap3 и так далее.");
+  }
 
   const eventHeader = findHeader(lowerMap, ["event", "event_id", "eventid", "race", "race_id", "raceid", "meet", "competition", "date", "day", "соревнование", "гонка", "старт", "дата", "протокол"]);
   const groupHeader = findHeader(lowerMap, ["group", "group_id", "groupid", "category", "division", "class", "wave", "зачет", "зачёт", "группа", "класс", "категория"]);
@@ -670,9 +675,21 @@ function renderTable() {
   });
 }
 
+const PLOTLY_WAIT_LIMIT_MS = 3000;
+let plotlyWaitedMs = 0;
+let plotlyWaitTimer = null;
+
 function renderCharts() {
   if (!window.Plotly) {
-    setTimeout(renderCharts, 50);
+    if (plotlyWaitedMs >= PLOTLY_WAIT_LIMIT_MS) {
+      renderEmptyCharts("Не удалось загрузить библиотеку графиков. Проверьте доступ к cdn.plot.ly и обновите страницу.");
+      return;
+    }
+    clearTimeout(plotlyWaitTimer);
+    plotlyWaitTimer = setTimeout(() => {
+      plotlyWaitedMs += 50;
+      renderCharts();
+    }, 50);
     return;
   }
 
@@ -742,7 +759,7 @@ function renderEmptyCharts(message) {
 
 function renderEmptyChart(id, message) {
   const chart = document.querySelector(`#${id}`);
-  Plotly.purge(chart);
+  if (window.Plotly) Plotly.purge(chart);
   chart.innerHTML = `<div class="chart-empty">${escapeHtml(message)}</div>`;
 }
 
@@ -1278,9 +1295,16 @@ function formatTime(value) {
   if (!Number.isFinite(value)) return "-";
   const sign = value < 0 ? "-" : "";
   const absolute = Math.abs(value);
-  const minutes = Math.floor(absolute / 60);
-  const seconds = absolute - minutes * 60;
-  const padded = seconds < 10 ? `0${seconds.toFixed(seconds % 1 ? 1 : 0)}` : seconds.toFixed(seconds % 1 ? 1 : 0);
+  let minutes = Math.floor(absolute / 60);
+  const raw = absolute - minutes * 60;
+  // toFixed может округлить 59.96 до "60.0" — переносим в минуты
+  let seconds = Number(raw.toFixed(raw % 1 ? 1 : 0));
+  if (seconds >= 60) {
+    minutes += 1;
+    seconds = 0;
+  }
+  const text = seconds.toFixed(seconds % 1 ? 1 : 0);
+  const padded = seconds < 10 ? `0${text}` : text;
   return `${sign}${minutes}:${padded}`;
 }
 

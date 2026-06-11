@@ -471,7 +471,6 @@ body.is-busy .file-picker {
   color: #fff;
 }
 
-.tab:disabled,
 .tab.is-disabled {
   opacity: 0.45;
   cursor: default;
@@ -579,8 +578,11 @@ body.is-busy .file-picker {
 }
 
 .comparison-table tbody th {
-  white-space: normal;
   min-width: 118px;
+  background: #fff;
+  color: var(--ink);
+  font-weight: 900;
+  white-space: normal;
 }
 
 .comparison-table th:first-child,
@@ -588,12 +590,6 @@ body.is-busy .file-picker {
   position: sticky;
   left: 0;
   z-index: 1;
-}
-
-.comparison-table tbody th {
-  background: #fff;
-  color: var(--ink);
-  font-weight: 900;
 }
 
 .comparison-table tbody th span {

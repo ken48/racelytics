@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Racelytics</title>
     <link rel="icon" href="racelytics-icon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="styles.css?v=49">
+    <link rel="stylesheet" href="styles.css?v=50">
     <script src="https://cdn.plot.ly/plotly-2.35.2.min.js" defer></script>
-    <script src="app.js?v=50" defer></script>
+    <script src="app.js?v=51" defer></script>
   </head>
   <body>
     <main class="app-shell">
@@ -22,7 +22,7 @@
         <form id="urlForm" class="source-form">
           <label for="srcInput">Ссылка на CSV-файл</label>
           <div class="input-row">
-            <input id="srcInput" name="src" type="url" placeholder="https://example.com/results.csv или Google Sheets export">
+            <input id="srcInput" name="src" type="text" inputmode="url" placeholder="https://example.com/results.csv или Google Sheets export">
             <button type="submit">Загрузить</button>
           </div>
         </form>
